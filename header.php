@@ -256,7 +256,7 @@ $current_page = basename($_SERVER['PHP_SELF']);
                 const isNotHash = !link.href.includes('#');
                 const hasNoOnclick = !link.getAttribute('onclick');
                 const isNotNewTab = link.target !== '_blank';
-                const isNotAction = !link.href.includes('?') && !link.href.includes('logout.php') && !link.href.includes('del') && !link.href.includes('toggle');
+                const isNotAction = !link.href.includes('?') && !link.href.includes('logout.php') && !link.href.includes('del') && !link.href.includes('toggle') && !link.href.includes('checkout');
 
                 if (isInternal && isNotHash && hasNoOnclick && isNotAction && isNotNewTab) {
                     e.preventDefault();
@@ -428,7 +428,7 @@ $current_page = basename($_SERVER['PHP_SELF']);
         .notif-item:last-child { border-bottom: none; }
         .notif-icon { font-size: 1.4rem; margin-top: 2px; }
 
-        .profile-btn { width: auto; padding: 0 20px; display: flex; gap: 12px; font-weight: 900; letter-spacing: 1px; }
+        .profile-btn { width: auto; padding: 0 20px; display: flex; gap: 12px; font-weight: 900; letter-spacing: 1px; text-decoration: none;}
         .profile-avatar { width: 30px; height: 30px; background: var(--main-bg); border-radius: 50%; border: 2px solid var(--border-color); display:flex; align-items:center; justify-content:center; color:var(--text-dark);}
 
         .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(14, 44, 70, 0.7); backdrop-filter: blur(8px); z-index: 9999; display: none; align-items: center; justify-content: center; padding: 20px;}
@@ -662,10 +662,10 @@ $current_page = basename($_SERVER['PHP_SELF']);
                     </a>
                 </div>
 
-                <div class="icon-btn profile-btn" style="background: var(--main-bg); color: var(--text-dark); cursor:pointer;" onclick="systemToast('Opening User Profile...')">
+                <a href="profile.php" class="icon-btn profile-btn" style="background: var(--main-bg); color: var(--text-dark); cursor:pointer;">
                     <div class="profile-avatar"><i class="fas fa-user-shield"></i></div>
                     ADMIN
-                </div>
+                </a>
             </div>
         </header>
         <main class="content-area">

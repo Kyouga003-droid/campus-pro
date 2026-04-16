@@ -1,24 +1,34 @@
 <?php
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
+session_start();
 include 'config.php';
 
-$patch = "CREATE TABLE IF NOT EXISTS admins (
+// Ensure admin table exists
+$patch_admin = "CREATE TABLE IF NOT EXISTS admins (
     id INT AUTO_INCREMENT PRIMARY KEY,
     username VARCHAR(50) UNIQUE,
     password VARCHAR(255)
 )";
-try { mysqli_query($conn, $patch); } catch (Exception $e) {}
+try { mysqli_query($conn, $patch_admin); } catch (Exception $e) {}
 
-$check = mysqli_query($conn, "SELECT COUNT(*) as c FROM admins");
-if($check && mysqli_fetch_assoc($check)['c'] == 0) {
+// Ensure demo admin exists
+$check_admin = mysqli_query($conn, "SELECT COUNT(*) as c FROM admins");
+if($check_admin && mysqli_fetch_assoc($check_admin)['c'] == 0) {
     $hashed = password_hash('admin123', PASSWORD_DEFAULT);
     mysqli_query($conn, "INSERT INTO admins (username, password) VALUES ('admin', '$hashed')");
 }
 
+// Ensure demo student exists (for testing)
+$check_demo_student = @mysqli_query($conn, "SELECT id FROM students WHERE student_id='S26-DEMO'");
+if($check_demo_student && mysqli_num_rows($check_demo_student) == 0) {
+    mysqli_query($conn, "INSERT INTO students (student_id, first_name, last_name, email, course, year_level, department, status) VALUES ('S26-DEMO', 'Demo', 'Student', 'demo.student@campus.edu', 'BSCS', '2A', 'Computer Studies', 'Enrolled')");
+}
+
 if(isset($_SESSION['auth']) && $_SESSION['auth'] === true) {
-    header("Location: index.php");
+    if(isset($_SESSION['role']) && $_SESSION['role'] === 'student') {
+        header("Location: student_portal.php");
+    } else {
+        header("Location: index.php");
+    }
     exit();
 }
 
@@ -28,18 +38,41 @@ if($_SERVER['REQUEST_METHOD'] == 'POST') {
     $user = mysqli_real_escape_string($conn, trim($_POST['username']));
     $pass = $_POST['password'];
 
-    $res = mysqli_query($conn, "SELECT password FROM admins WHERE username='$user'");
-    if($res && mysqli_num_rows($res) > 0) {
-        $row = mysqli_fetch_assoc($res);
+    // 1. Check Admin Matrix
+    $res_admin = mysqli_query($conn, "SELECT password FROM admins WHERE username='$user'");
+    if($res_admin && mysqli_num_rows($res_admin) > 0) {
+        $row = mysqli_fetch_assoc($res_admin);
         if(password_verify($pass, $row['password']) || $pass === 'admin123') {
             $_SESSION['auth'] = true;
+            $_SESSION['role'] = 'admin';
+            $_SESSION['user_id'] = $user;
+            if(function_exists('logAction')) logAction($conn, $user, 'Admin Matrix Initialized');
             header("Location: index.php");
             exit();
         } else {
             $error = "Invalid credentials. Unauthorized access logged.";
         }
     } else {
-        $error = "Identity not found in the matrix.";
+        // 2. Check Student Matrix
+        $res_student = @mysqli_query($conn, "SELECT id, first_name, last_name FROM students WHERE student_id='$user'");
+        if($res_student && mysqli_num_rows($res_student) > 0) {
+            // In a production system, students would have hashed passwords in a linked auth table.
+            // For this architecture, we use a universal default password for demonstration.
+            if($pass === 'student123') {
+                $student_data = mysqli_fetch_assoc($res_student);
+                $_SESSION['auth'] = true;
+                $_SESSION['role'] = 'student';
+                $_SESSION['user_id'] = $user;
+                $_SESSION['full_name'] = $student_data['first_name'] . ' ' . $student_data['last_name'];
+                if(function_exists('logAction')) logAction($conn, $user, 'Student Portal Initialized');
+                header("Location: student_portal.php");
+                exit();
+            } else {
+                $error = "Invalid credentials. Unauthorized access logged.";
+            }
+        } else {
+            $error = "Identity not found in the matrix.";
+        }
     }
 }
 ?>
@@ -72,7 +105,7 @@ if($_SERVER['REQUEST_METHOD'] == 'POST') {
             --border-color: #0f172a; --border-light: #cbd5e1;
             --text-dark: #0f172a; --text-light: #475569;
             --hard-shadow: 6px 6px 0px rgba(15, 23, 42, 1);
-            --panel-bg: rgba(9, 28, 45, 0.85); --panel-text: #ffffff;
+            --panel-bg: #091c2d; --panel-text: #ffffff;
         }
         
         [data-theme="dark"] {
@@ -80,7 +113,7 @@ if($_SERVER['REQUEST_METHOD'] == 'POST') {
             --border-color: #FC9D01; --border-light: #334155;
             --text-dark: #f8fafc; --text-light: #94a3b8;
             --hard-shadow: 6px 6px 0px rgba(252, 157, 1, 1);
-            --panel-bg: rgba(4, 9, 20, 0.85); --panel-text: #f8fafc;
+            --panel-bg: #040914; --panel-text: #f8fafc;
         }
 
         html[data-cb="protanopia"] { filter: url(#protanopia); }
@@ -98,33 +131,16 @@ if($_SERVER['REQUEST_METHOD'] == 'POST') {
 
         .split-layout { display: flex; width: 100%; height: 100vh; }
         
-        .brand-panel { flex: 1.2; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px; text-align: center; overflow: hidden; border-right: 2px solid var(--border-color); z-index: 10;}
-        
-        .slider-bg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: -2; overflow: hidden; }
-        .slide { position: absolute; top: -5%; left: -5%; width: 110%; height: 110%; background-size: cover; background-position: center; opacity: 0; animation: crossfade 24s infinite ease-in-out; }
-        
-        .slide:nth-child(1) { background-image: url('https://images.unsplash.com/photo-1541339907198-e08756dedf3f?auto=format&fit=crop&w=1950&q=80'); animation-delay: 0s; }
-        .slide:nth-child(2) { background-image: url('https://images.unsplash.com/photo-1523050854058-8df90110c9f1?auto=format&fit=crop&w=1950&q=80'); animation-delay: 8s; }
-        .slide:nth-child(3) { background-image: url('https://images.unsplash.com/photo-1562774053-701939374585?auto=format&fit=crop&w=1950&q=80'); animation-delay: 16s; }
-        
-        @keyframes crossfade {
-            0% { opacity: 0; transform: scale(1); }
-            10% { opacity: 1; transform: scale(1.02); }
-            33% { opacity: 1; transform: scale(1.05); }
-            43% { opacity: 0; transform: scale(1.07); }
-            100% { opacity: 0; transform: scale(1); }
-        }
-
-        .slider-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(135deg, var(--panel-bg), rgba(0,0,0,0.9)); z-index: -1; backdrop-filter: blur(4px); }
-        .brand-panel::before { content: ''; position: absolute; top:0; left:0; width:100%; height:100%; background-image: radial-gradient(rgba(252, 157, 1, 0.15) 2px, transparent 2px); background-size: 50px 50px; z-index: 0; opacity: 0.5;}
+        .brand-panel { flex: 1.2; background: linear-gradient(135deg, var(--panel-bg), #02050a); position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px; text-align: center; overflow: hidden; border-right: 2px solid var(--border-color); z-index: 10;}
+        .brand-panel::before { content: ''; position: absolute; top:0; left:0; width:100%; height:100%; background-image: radial-gradient(rgba(252, 157, 1, 0.08) 2px, transparent 2px); background-size: 50px 50px; z-index: 0; opacity: 0.5;}
         
         .logo-container { position: relative; z-index: 1; animation: floatLogo 6s ease-in-out infinite; }
         .campus-logo-svg { width: 200px; height: 200px; color: var(--brand-secondary); animation: pulseGlow 4s infinite alternate;}
         
         .brand-text { position: relative; z-index: 1; margin-top: 50px; }
-        .brand-title { font-family: var(--heading-font); font-size: 4rem; font-weight: 900; color: var(--panel-text); text-transform: uppercase; letter-spacing: 5px; margin-bottom: 10px; text-shadow: 4px 4px 0px rgba(0,0,0,0.8);}
-        .brand-subtitle { font-size: 1.2rem; font-weight: 800; color: var(--brand-secondary); letter-spacing: 4px; text-transform: uppercase; text-shadow: 2px 2px 4px rgba(0,0,0,0.8); }
-        .brand-motto { margin-top: 30px; font-family: var(--heading-font); font-style: italic; font-size: 1rem; color: rgba(255,255,255,0.6); letter-spacing: 2px; }
+        .brand-title { font-family: var(--heading-font); font-size: 4rem; font-weight: 900; color: var(--panel-text); text-transform: uppercase; letter-spacing: 5px; margin-bottom: 10px; text-shadow: 4px 4px 0px rgba(0,0,0,0.5);}
+        .brand-subtitle { font-size: 1.2rem; font-weight: 800; color: var(--brand-secondary); letter-spacing: 4px; text-transform: uppercase; }
+        .brand-motto { margin-top: 30px; font-family: var(--heading-font); font-style: italic; font-size: 1rem; color: rgba(255,255,255,0.4); letter-spacing: 2px; }
 
         .auth-panel { flex: 1; display: flex; align-items: center; justify-content: center; padding: 40px; position: relative; background-image: radial-gradient(rgba(15, 23, 42, 0.04) 2px, transparent 2px); background-size: 30px 30px; animation: fadeIn 0.8s ease-out;}
         [data-theme="dark"] .auth-panel { background-image: radial-gradient(rgba(252, 157, 1, 0.04) 2px, transparent 2px); }
@@ -188,20 +204,13 @@ if($_SERVER['REQUEST_METHOD'] == 'POST') {
 
     <div class="split-layout">
         <div class="brand-panel">
-            <div class="slider-bg">
-                <div class="slide"></div>
-                <div class="slide"></div>
-                <div class="slide"></div>
-            </div>
-            <div class="slider-overlay"></div>
-            
             <div class="logo-container">
                 <svg class="campus-logo-svg" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
                     <path d="M60 5 L105 25 L105 75 L60 115 L15 75 L15 25 Z" fill="none" stroke="currentColor" stroke-width="4" stroke-linejoin="round"/>
                     <path d="M60 15 L95 30 L95 70 L60 100 L25 70 L25 30 Z" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="6 4"/>
                     <path d="M60 85 L40 70 L40 45 L60 60 Z" fill="currentColor"/>
                     <path d="M60 85 L80 70 L80 45 L60 60 Z" fill="currentColor"/>
-                    <path d="M60 60 L60 85" stroke="var(--brand-secondary)" stroke-width="2"/>
+                    <path d="M60 60 L60 85" stroke="var(--panel-bg)" stroke-width="2"/>
                     <circle cx="60" cy="35" r="8" fill="currentColor"/>
                     <circle cx="60" cy="35" r="14" fill="none" stroke="currentColor" stroke-width="2"/>
                     <path d="M60 21 L60 28 M60 42 L60 49 M46 35 L53 35 M67 35 L74 35" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
@@ -231,7 +240,7 @@ if($_SERVER['REQUEST_METHOD'] == 'POST') {
                     <div class="input-group">
                         <label for="username">Identity Tag</label>
                         <div class="input-wrapper">
-                            <input type="text" id="username" name="username" class="auth-input" placeholder="Admin Username" required autocomplete="off">
+                            <input type="text" id="username" name="username" class="auth-input" placeholder="Admin/Student ID" required autocomplete="off">
                             <i class="fas fa-fingerprint input-icon"></i>
                         </div>
                     </div>
