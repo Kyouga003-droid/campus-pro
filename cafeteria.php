@@ -1,282 +1,1058 @@
 <?php
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
 include 'config.php';
 
-$patch_queries = [
-    "CREATE TABLE IF NOT EXISTS cafeteria_items (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        name VARCHAR(100),
-        category VARCHAR(50),
-        description TEXT,
-        price DECIMAL(10,2),
-        prep_time INT,
-        tags VARCHAR(100),
-        icon VARCHAR(50)
-    )"
+// FUNCTION 1: Core Menu Schema Setup
+$patch1 = "CREATE TABLE IF NOT EXISTS cafeteria_menu (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    item_name VARCHAR(100),
+    category VARCHAR(50),
+    price DECIMAL(10,2),
+    calories INT,
+    allergens VARCHAR(100),
+    stock INT,
+    is_trending BOOLEAN DEFAULT FALSE,
+    is_combo BOOLEAN DEFAULT FALSE
+)";
+try { 
+    mysqli_query($conn, $patch1); 
+} catch(Exception $e) {}
+
+// FUNCTION 2: Core Order Schema Setup
+$patch2 = "CREATE TABLE IF NOT EXISTS cafeteria_orders (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id VARCHAR(50),
+    total_amount DECIMAL(10,2),
+    order_data TEXT,
+    pickup_time VARCHAR(20),
+    status VARCHAR(20) DEFAULT 'Preparing',
+    order_hash VARCHAR(100)
+)";
+try { 
+    mysqli_query($conn, $patch2); 
+} catch(Exception $e) {}
+
+// FUNCTION 3 - 10: Advanced Nutritional & Marketing Metrics
+$cols1 = [
+    "dietary_badge VARCHAR(50) DEFAULT 'None'",
+    "protein_g INT DEFAULT 0",
+    "carbs_g INT DEFAULT 0",
+    "fat_g INT DEFAULT 0",
+    "prep_time_mins INT DEFAULT 5",
+    "discount_pct INT DEFAULT 0",
+    "is_active BOOLEAN DEFAULT 1",
+    "spiciness_level INT DEFAULT 0"
 ];
-foreach($patch_queries as $q) { try { mysqli_query($conn, $q); } catch (Exception $e) {} }
-
-if(isset($_GET['del'])) {
-    $id = intval($_GET['del']);
-    mysqli_query($conn, "DELETE FROM cafeteria_items WHERE id = $id");
-    header("Location: cafeteria.php");
-    exit();
+foreach ($cols1 as $c) {
+    try { 
+        mysqli_query($conn, "ALTER TABLE cafeteria_menu ADD COLUMN $c"); 
+    } catch(Exception $e) {}
 }
 
-if($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_cafeteria_item'])) {
-    $n = mysqli_real_escape_string($conn, $_POST['name']);
-    $c = mysqli_real_escape_string($conn, $_POST['category']);
-    $d = mysqli_real_escape_string($conn, $_POST['description']);
-    $p = floatval($_POST['price']);
-    $pt = intval($_POST['prep_time']);
-    $t = mysqli_real_escape_string($conn, $_POST['tags']);
-    $i = mysqli_real_escape_string($conn, $_POST['icon']);
-    mysqli_query($conn, "INSERT INTO cafeteria_items (name, category, description, price, prep_time, tags, icon) VALUES ('$n', '$c', '$d', $p, $pt, '$t', '$i')");
-    header("Location: cafeteria.php");
-    exit();
+// FUNCTION 11 - 18: Advanced Order Tracking & Finance Metrics
+$cols2 = [
+    "promo_code VARCHAR(20)",
+    "donation_amt DECIMAL(10,2) DEFAULT 0",
+    "is_favorite BOOLEAN DEFAULT 0",
+    "kitchen_notes TEXT",
+    "payment_method VARCHAR(20) DEFAULT 'Campus Cash'",
+    "loyalty_earned INT DEFAULT 0",
+    "refund_requested BOOLEAN DEFAULT 0",
+    "completion_time DATETIME"
+];
+foreach ($cols2 as $c) {
+    try { 
+        mysqli_query($conn, "ALTER TABLE cafeteria_orders ADD COLUMN $c"); 
+    } catch(Exception $e) {}
 }
 
-$check_empty = mysqli_query($conn, "SELECT COUNT(*) as c FROM cafeteria_items");
-if(mysqli_fetch_assoc($check_empty)['c'] == 0) {
-    $seed_data = [
-        ['Classic Cheeseburger', 'Mains', 'Angus beef, cheddar, lettuce, tomato, house sauce', 350.00, 10, 'Bestseller', 'fa-hamburger'],
-        ['Spicy Chicken Sandwich', 'Mains', 'Crispy chicken, pepper jack, spicy mayo', 380.00, 12, 'Spicy', 'fa-drumstick-bite'],
-        ['Margherita Pizza', 'Mains', 'Fresh mozzarella, basil, marinara, thin crust', 450.00, 15, 'Vegetarian', 'fa-pizza-slice'],
-        ['Caesar Salad', 'Mains', 'Romaine, parmesan, croutons, creamy dressing', 250.00, 5, 'Healthy', 'fa-leaf'],
-        ['Grilled Salmon Bowl', 'Mains', 'Wild salmon, quinoa, roasted vegetables', 520.00, 15, 'Gluten-Free', 'fa-fish'],
-        ['Veggie Wrap', 'Mains', 'Hummus, spinach, peppers, cucumber, feta', 320.00, 5, 'Vegan', 'fa-carrot'],
-        ['French Fries', 'Sides', 'Crispy golden fries with sea salt', 120.00, 5, 'Bestseller', 'fa-fry'],
-        ['Sweet Potato Fries', 'Sides', 'Served with honey mustard dipping sauce', 150.00, 5, 'Vegan', 'fa-seedling']
+// FUNCTION 19: Automatic Data Seeding
+$check_menu = mysqli_query($conn, "SELECT COUNT(*) as c FROM cafeteria_menu");
+if (mysqli_fetch_assoc($check_menu)['c'] == 0) {
+    $menu = [
+        ['Artisan Smashburger', 'Mains', 180.00, 650, 'Gluten, Dairy', 15, 1, 0, 'None', 35, 40, 45, 10, 0, 1, 0],
+        ['Spicy Basil Pasta', 'Mains', 150.00, 420, 'Gluten', 8, 0, 0, 'Vegetarian', 12, 65, 15, 8, 0, 1, 2],
+        ['Vegan Buddha Bowl', 'Healthy', 195.00, 310, 'None', 5, 0, 0, 'Vegan', 15, 45, 10, 5, 0, 1, 0],
+        ['Truffle Fries', 'Sides', 85.00, 380, 'None', 20, 1, 0, 'Vegetarian', 5, 45, 25, 5, 0, 1, 0],
+        ['Matcha Latte', 'Beverages', 110.00, 120, 'Dairy', 30, 0, 0, 'None', 4, 15, 5, 3, 0, 1, 0],
+        ['Campus Combo A', 'Combos', 250.00, 950, 'Gluten, Dairy', 10, 1, 1, 'None', 45, 100, 55, 12, 10, 1, 0],
+        ['Keto Grilled Chicken', 'Healthy', 210.00, 280, 'None', 4, 0, 0, 'Keto', 45, 5, 15, 15, 0, 1, 0],
+        ['Iced Americano', 'Beverages', 95.00, 15, 'None', 50, 0, 0, 'Vegan', 1, 2, 0, 2, 0, 1, 0]
     ];
-    foreach($seed_data as $item) {
-        $n = mysqli_real_escape_string($conn, $item[0]); $c = mysqli_real_escape_string($conn, $item[1]);
-        $d = mysqli_real_escape_string($conn, $item[2]); $p = $item[3]; $pt = $item[4];
-        $t = mysqli_real_escape_string($conn, $item[5]); $i = mysqli_real_escape_string($conn, $item[6]);
-        mysqli_query($conn, "INSERT INTO cafeteria_items (name, category, description, price, prep_time, tags, icon) VALUES ('$n', '$c', '$d', $p, $pt, '$t', '$i')");
+    
+    foreach ($menu as $m) {
+        mysqli_query($conn, "INSERT INTO cafeteria_menu 
+            (item_name, category, price, calories, allergens, stock, is_trending, is_combo, dietary_badge, protein_g, carbs_g, fat_g, prep_time_mins, discount_pct, is_active, spiciness_level) 
+            VALUES 
+            ('{$m[0]}', '{$m[1]}', {$m[2]}, {$m[3]}, '{$m[4]}', {$m[5]}, {$m[6]}, {$m[7]}, '{$m[8]}', {$m[9]}, {$m[10]}, {$m[11]}, {$m[12]}, {$m[13]}, {$m[14]}, {$m[15]})");
     }
 }
 
-include 'header.php';
+// FUNCTION 20: Secure Order Checkout Processing
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['place_order'])) {
+    $uid = $_SESSION['user_id'] ?? 'GUEST';
+    $total = floatval($_POST['total_amount']);
+    $data = mysqli_real_escape_string($conn, $_POST['order_data']);
+    $time = mysqli_real_escape_string($conn, $_POST['pickup_time']);
+    $hash = md5(uniqid($uid, true));
+    $pc = mysqli_real_escape_string($conn, $_POST['promo_code']);
+    $da = floatval($_POST['donation_amt']);
+    $kn = mysqli_real_escape_string($conn, $_POST['kitchen_notes']);
+    $pm = mysqli_real_escape_string($conn, $_POST['payment_method']);
+    $le = intval($_POST['loyalty_earned']);
+    
+    mysqli_query($conn, "INSERT INTO cafeteria_orders 
+        (user_id, total_amount, order_data, pickup_time, order_hash, promo_code, donation_amt, kitchen_notes, payment_method, loyalty_earned) 
+        VALUES 
+        ('$uid', $total, '$data', '$time', '$hash', '$pc', $da, '$kn', '$pm', $le)");
+        
+    $order_id = mysqli_insert_id($conn);
+    header("Location: cafeteria.php?success=1&receipt=$hash&oid=$order_id");
+    exit();
+}
+
+$user_role = $_SESSION['role'] ?? 'admin';
+if ($user_role === 'student') {
+    include 'student_header.php';
+} else {
+    include 'header.php';
+}
+
+$campus_cash = 1450.50;
+$loyalty_pts = 320;
+$queue_number = rand(104, 118);
+$kitchen_load = rand(45, 95);
+$wait_time = ceil($kitchen_load / 5) + 5;
 ?>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
 <style>
-    .order-layout { display: grid; grid-template-columns: 1fr 380px; gap: 30px; align-items: start; }
-    
-    .cat-nav { display: flex; gap: 15px; margin-bottom: 30px; overflow-x: auto; padding-bottom: 10px; align-items: center; }
-    .cat-pill { padding: 10px 20px; border-radius: 8px; background: var(--card-bg); border: 2px solid var(--border-color); color: var(--text-dark); font-weight: 800; cursor: pointer; transition: 0.2s; white-space: nowrap; font-family: var(--heading-font); letter-spacing: 1px; text-transform: uppercase; box-shadow: var(--glow-shadow);}
-    .cat-pill:hover { transform: translate(-2px, -2px); box-shadow: 4px 4px 0px var(--border-color); }
-    .cat-pill.active { background: var(--brand-secondary); border-color: var(--brand-secondary); color: var(--brand-primary); transform: translate(-2px, -2px); box-shadow: 4px 4px 0px var(--brand-secondary); }
+    /* UI FEATURE 1: Clean Root Variables */
+    :root {
+        --food-primary: #0f172a;
+        --food-accent: #f59e0b;
+        --food-leaf: #10b981;
+        --food-bg: #f8fafc;
+        --food-card: #ffffff;
+    }
 
-    .menu-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 25px; }
-    .menu-item { background: var(--card-bg); border: 2px solid var(--border-color); border-radius: 12px; padding: 20px; transition: 0.2s; position: relative; display: flex; flex-direction: column; overflow:hidden; box-shadow: var(--glow-shadow);}
-    .menu-item:hover { border-color: var(--brand-secondary); transform: translate(-4px, -4px); box-shadow: 6px 6px 0px rgba(0,0,0,0.1); }
-    [data-theme="dark"] .menu-item:hover { box-shadow: 6px 6px 0px rgba(252, 157, 1, 0.2); }
-    
-    .item-del-btn { position: absolute; top: 12px; right: 12px; color: var(--brand-crimson); transition: 0.2s; cursor: pointer; z-index: 10; opacity: 0.5; background: var(--main-bg); padding: 6px; border-radius: 4px; border: 1px solid var(--brand-crimson);}
-    .item-del-btn:hover { opacity: 1; transform: scale(1.1); }
+    [data-theme="dark"] {
+        --food-primary: #f8fafc;
+        --food-bg: #0f172a;
+        --food-card: #1e293b;
+    }
 
-    .item-icon { height: 110px; background: var(--main-bg); border-radius: 8px; margin-bottom: 15px; display: flex; align-items: center; justify-content: center; font-size: 2.8rem; color: var(--brand-primary); border: 2px solid var(--border-color); }
-    [data-theme="dark"] .item-icon { color: var(--brand-secondary); }
-    .item-title { font-size: 1.1rem; font-weight: 800; color: var(--text-dark); margin-bottom: 5px; }
-    .item-desc { font-size: 0.8rem; color: var(--text-light); line-height: 1.4; flex-grow: 1; margin-bottom: 15px; }
-    .item-meta { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-    .item-price { font-size: 1.3rem; font-weight: 900; color: var(--brand-secondary); font-family: var(--heading-font); }
-    [data-theme="light"] .item-price { color: var(--brand-primary); }
-    .item-tag { font-size: 0.65rem; font-weight: 800; padding: 3px 8px; border-radius: 4px; background: rgba(252, 157, 1, 0.1); color: var(--brand-secondary); text-transform: uppercase; border: 1px solid var(--brand-secondary); }
-    [data-theme="light"] .item-tag { background: rgba(14, 44, 70, 0.1); color: var(--brand-primary); border-color: var(--brand-primary); }
+    /* UI FEATURE 2: Telemetry Dashboard Header */
+    .cafe-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: stretch;
+        gap: 20px;
+        margin-bottom: 30px;
+    }
     
-    .add-btn { width: 100%; padding: 10px; background: var(--main-bg); border: 2px solid var(--border-color); color: var(--text-dark); font-weight: 800; border-radius: 6px; cursor: pointer; transition: 0.2s; text-transform: uppercase; letter-spacing: 1px; box-shadow: 2px 2px 0px var(--border-color);}
-    .add-btn:active { transform: translate(2px, 2px); box-shadow: none; }
-    .add-btn:hover { background: var(--brand-secondary); color: var(--brand-primary); border-color: var(--brand-secondary); box-shadow: 2px 2px 0px var(--brand-secondary);}
+    .telemetry-board {
+        display: flex;
+        gap: 20px;
+        flex: 1;
+    }
     
-    .cart-panel { background: var(--card-bg); border: 2px solid var(--border-color); border-radius: 12px; padding: 25px; position: sticky; top: 105px; box-shadow: var(--glow-shadow); display: flex; flex-direction: column; max-height: calc(100vh - 130px); }
-    .cart-header { font-size: 1.3rem; font-weight: 800; font-family: var(--heading-font); color: var(--text-dark); border-bottom: 2px solid var(--border-color); padding-bottom: 15px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; text-transform: uppercase;}
-    .cart-items { flex-grow: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; padding-right: 5px; }
-    .cart-item { display: flex; justify-content: space-between; align-items: center; padding: 12px; background: var(--main-bg); border: 2px solid var(--border-color); border-radius: 6px; }
-    .cart-item-info { flex-grow: 1; margin-left: 10px; }
-    .cart-item-title { font-size: 0.85rem; font-weight: 700; color: var(--text-dark); }
-    .cart-item-price { font-size: 0.9rem; font-weight: 900; color: var(--brand-secondary); }
-    [data-theme="light"] .cart-item-price { color: var(--brand-primary); }
-    .qty-ctrl { display: flex; align-items: center; gap: 8px; background: var(--card-bg); padding: 4px 8px; border: 2px solid var(--border-color); border-radius: 4px; }
-    .qty-btn { background: none; border: none; color: var(--text-dark); cursor: pointer; font-weight: 900; font-size: 1rem; }
-    .cart-totals { border-top: 2px solid var(--border-color); padding-top: 15px; margin-bottom: 20px; }
-    .cart-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.9rem; color: var(--text-light); font-weight: 600; }
-    .cart-row.total { font-size: 1.4rem; color: var(--text-dark); font-weight: 900; margin-top: 10px; font-family: var(--heading-font); }
+    .t-card {
+        background: var(--food-card);
+        border: 1px solid var(--border-color);
+        border-radius: 16px;
+        padding: 24px;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        position: relative;
+        overflow: hidden;
+        box-shadow: var(--soft-shadow);
+        transition: 0.3s;
+    }
     
-    .checkout-btn { width: 100%; padding: 16px; background: var(--brand-secondary); border: 2px solid var(--border-color); color: var(--brand-primary); font-weight: 900; font-size: 1.1rem; border-radius: 8px; cursor: pointer; transition: 0.2s; text-transform: uppercase; letter-spacing: 2px; box-shadow: 4px 4px 0px rgba(0,0,0,0.2); }
-    .checkout-btn:hover { transform: translate(-2px, -2px); box-shadow: 6px 6px 0px rgba(0,0,0,0.2); background: var(--brand-accent); color: #fff; border-color: var(--brand-accent); }
-    .checkout-btn:active { transform: translate(4px, 4px); box-shadow: none; }
+    .t-card:hover {
+        transform: translateY(-2px);
+        border-color: var(--text-light);
+    }
     
-    .empty-cart { text-align: center; color: var(--text-light); font-weight: 600; padding: 40px 20px; }
-    .empty-cart i { font-size: 3rem; opacity: 0.3; margin-bottom: 15px; }
+    .t-val {
+        font-size: 2rem;
+        font-weight: 700;
+        color: var(--text-dark);
+        line-height: 1;
+        margin-bottom: 8px;
+        letter-spacing: -0.5px;
+    }
+    
+    .t-lbl {
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: var(--text-light);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    
+    .t-icon {
+        position: absolute;
+        right: 20px;
+        bottom: 20px;
+        font-size: 3rem;
+        opacity: 0.03;
+        color: var(--text-dark);
+    }
+
+    /* UI FEATURE 3: Glassmorphism Wallet Card */
+    .wallet-card {
+        background: linear-gradient(135deg, #0f172a, #1e293b);
+        color: #fff;
+        border-radius: 16px;
+        padding: 24px;
+        min-width: 280px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        box-shadow: 0 10px 25px -5px rgba(0,0,0,0.2);
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .wallet-card::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        right: 0;
+        width: 150px;
+        height: 150px;
+        background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+        border-radius: 50%;
+        transform: translate(30%, -30%);
+    }
+
+    /* UI FEATURE 4: Grid Layouts */
+    .cafe-grid {
+        display: grid;
+        grid-template-columns: 1fr 380px;
+        gap: 30px;
+        align-items: start;
+    }
+    
+    @media(max-width: 1100px) {
+        .cafe-grid { grid-template-columns: 1fr; }
+    }
+
+    /* UI FEATURE 5: Scrollable Filter Menu */
+    .menu-filters {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 25px;
+        overflow-x: auto;
+        padding-bottom: 10px;
+        scrollbar-width: none;
+    }
+    
+    .menu-filters::-webkit-scrollbar {
+        display: none;
+    }
+    
+    .filter-btn {
+        background: var(--food-card);
+        border: 1px solid var(--border-color);
+        padding: 10px 20px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        border-radius: 30px;
+        cursor: pointer;
+        color: var(--text-dark);
+        white-space: nowrap;
+        transition: 0.2s;
+        box-shadow: var(--soft-shadow);
+    }
+    
+    .filter-btn:hover, .filter-btn.active {
+        background: var(--text-dark);
+        color: var(--food-bg);
+        border-color: var(--text-dark);
+    }
+
+    /* UI FEATURE 6: Product Item Cards */
+    .menu-items {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+        gap: 20px;
+    }
+    
+    .menu-card {
+        background: var(--food-card);
+        border: 1px solid var(--border-color);
+        border-radius: 16px;
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        transition: 0.3s;
+        box-shadow: var(--soft-shadow);
+        position: relative;
+    }
+    
+    .menu-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 10px 20px -5px rgba(0,0,0,0.08);
+        border-color: var(--border-light);
+    }
+    
+    .menu-card.disabled {
+        opacity: 0.5;
+        pointer-events: none;
+        filter: grayscale(1);
+    }
+
+    /* UI FEATURE 7: Product Headers */
+    .mc-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 15px;
+    }
+    
+    .mc-img-ph {
+        width: 60px;
+        height: 60px;
+        background: var(--bg-grid);
+        border-radius: 12px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        font-size: 1.5rem;
+        color: var(--text-light);
+    }
+    
+    .mc-price {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: var(--text-dark);
+    }
+    
+    .mc-title {
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--text-dark);
+        margin-bottom: 6px;
+        line-height: 1.3;
+    }
+
+    /* UI FEATURE 8: Dietary Badge System */
+    .mc-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-bottom: 15px;
+    }
+    
+    .tag {
+        font-size: 0.65rem;
+        font-weight: 600;
+        padding: 4px 8px;
+        border-radius: 20px;
+        background: var(--bg-grid);
+        color: var(--text-light);
+    }
+    
+    .tag-cal { color: #f59e0b; background: rgba(245,158,11,0.1); }
+    .tag-alg { color: #ef4444; background: rgba(239,68,68,0.1); }
+    .tag-diet { color: #10b981; background: rgba(16,185,129,0.1); }
+
+    /* UI FEATURE 9: Macro Progress Bars */
+    .mc-macros {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.7rem;
+        color: var(--text-light);
+        margin-bottom: 15px;
+        padding-top: 15px;
+        border-top: 1px solid var(--border-light);
+    }
+    
+    .macro-bar {
+        height: 4px;
+        border-radius: 2px;
+        background: var(--border-light);
+        overflow: hidden;
+        flex: 1;
+        margin: 0 5px;
+    }
+    
+    .macro-fill {
+        height: 100%;
+    }
+
+    /* UI FEATURE 10: Add to Cart Controls */
+    .mc-action { margin-top: auto; }
+    
+    .btn-add {
+        width: 100%;
+        background: transparent;
+        border: 1px solid var(--border-color);
+        font-weight: 600;
+        padding: 10px;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: 0.2s;
+        color: var(--text-dark);
+    }
+    
+    .btn-add:hover {
+        background: var(--text-dark);
+        color: var(--food-bg);
+        border-color: var(--text-dark);
+    }
+
+    /* UI FEATURE 11: Sticky Cart Panel */
+    .cart-panel {
+        background: var(--food-card);
+        border: 1px solid var(--border-color);
+        border-radius: 20px;
+        position: sticky;
+        top: 100px;
+        display: flex;
+        flex-direction: column;
+        max-height: calc(100vh - 120px);
+        box-shadow: var(--soft-shadow);
+        overflow: hidden;
+    }
+    
+    /* UI FEATURE 12: Glass Cart Header */
+    .cart-head {
+        padding: 20px 25px;
+        border-bottom: 1px solid var(--border-color);
+        font-weight: 700;
+        font-size: 1.1rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: rgba(var(--card-bg-rgb), 0.9);
+        backdrop-filter: blur(10px);
+        z-index: 10;
+    }
+    
+    .cart-body {
+        padding: 20px 25px;
+        overflow-y: auto;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+    }
+    
+    .cart-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 1px solid var(--border-light);
+        padding-bottom: 15px;
+    }
+    
+    .ci-name {
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: var(--text-dark);
+        margin-bottom: 4px;
+    }
+    
+    .ci-price {
+        font-size: 0.85rem;
+        font-weight: 700;
+        color: var(--text-light);
+    }
+    
+    /* UI FEATURE 13: Increment/Decrement Controls */
+    .ci-ctrl {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        background: var(--bg-grid);
+        border-radius: 20px;
+        padding: 4px;
+    }
+    
+    .ci-btn {
+        background: transparent;
+        border: none;
+        width: 24px;
+        height: 24px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        border-radius: 50%;
+        cursor: pointer;
+        font-weight: 600;
+        color: var(--text-dark);
+        transition: 0.2s;
+    }
+    
+    .ci-btn:hover {
+        background: var(--food-card);
+        box-shadow: var(--soft-shadow);
+    }
+
+    /* UI FEATURE 14: Cart Options Section */
+    .cart-opts {
+        padding: 20px 25px;
+        border-top: 1px solid var(--border-color);
+        background: var(--bg-grid);
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+    }
+    
+    .opt-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: var(--text-dark);
+    }
+    
+    .opt-select {
+        border: 1px solid var(--border-color);
+        background: var(--food-card);
+        padding: 8px 12px;
+        border-radius: 8px;
+        font-weight: 500;
+        font-size: 0.85rem;
+        outline: none;
+    }
+
+    /* UI FEATURE 15: iOS Style Toggle Switch */
+    .toggle-switch {
+        position: relative;
+        width: 40px;
+        height: 22px;
+        appearance: none;
+        background: var(--border-color);
+        border-radius: 20px;
+        cursor: pointer;
+        outline: none;
+        transition: 0.3s;
+    }
+    
+    .toggle-switch:checked {
+        background: #10b981;
+    }
+    
+    .toggle-switch::after {
+        content: '';
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 18px;
+        height: 18px;
+        background: #fff;
+        border-radius: 50%;
+        transition: 0.3s;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+    
+    .toggle-switch:checked::after {
+        transform: translateX(18px);
+    }
+
+    /* UI FEATURE 16: Checkout Footer */
+    .cart-foot {
+        padding: 20px 25px;
+        background: var(--food-card);
+    }
+    
+    .cf-row {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.85rem;
+        color: var(--text-light);
+        margin-bottom: 8px;
+        font-weight: 500;
+    }
+    
+    .cf-total {
+        display: flex;
+        justify-content: space-between;
+        font-size: 1.3rem;
+        font-weight: 700;
+        color: var(--text-dark);
+        margin-top: 15px;
+        padding-top: 15px;
+        border-top: 1px dashed var(--border-color);
+    }
+    
+    .btn-checkout {
+        width: 100%;
+        background: var(--text-dark);
+        color: var(--food-bg);
+        border: none;
+        padding: 16px;
+        font-weight: 600;
+        font-size: 1rem;
+        border-radius: 12px;
+        cursor: pointer;
+        margin-top: 20px;
+        transition: 0.2s;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 10px;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    }
+    
+    .btn-checkout:hover {
+        opacity: 0.9;
+        transform: translateY(-2px);
+    }
+
+    /* UI FEATURE 17: QR Code Receipt Modal */
+    .qr-modal {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(15,23,42,0.4);
+        backdrop-filter: blur(8px);
+        z-index: 9999;
+        display: none;
+        justify-content: center;
+        align-items: center;
+    }
+    
+    .qr-box {
+        background: var(--food-card);
+        border: 1px solid var(--border-color);
+        border-radius: 24px;
+        padding: 40px;
+        text-align: center;
+        max-width: 400px;
+        width: 90%;
+        box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25);
+        animation: popIn 0.3s ease;
+    }
+    
+    @keyframes popIn {
+        from { transform: scale(0.95); opacity: 0; }
+        to { transform: scale(1); opacity: 1; }
+    }
+
+    /* UI FEATURE 18: Nutrition Overlay Modal */
+    .nutri-modal {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(255,255,255,0.95);
+        backdrop-filter: blur(5px);
+        z-index: 5;
+        display: none;
+        flex-direction: column;
+        padding: 20px;
+        border-radius: 16px;
+    }
+    
+    [data-theme="dark"] .nutri-modal {
+        background: rgba(30,41,59,0.95);
+    }
 </style>
 
-<div class="card" style="margin-bottom: 30px; padding: 35px;">
-    <h1 style="color: var(--text-dark); font-size:2.8rem; margin-bottom:10px; font-family: var(--heading-font); letter-spacing: 2px; text-transform: uppercase;">Campus Dining</h1>
-    <p style="color: var(--text-light); font-weight: 600; font-size:1.1rem;">Place your order ahead of time to skip the line.</p>
+<div class="cafe-header">
+    <div class="telemetry-board">
+        <div class="t-card">
+            <i class="fas fa-users t-icon"></i>
+            <div class="t-val"><?= $queue_number ?></div>
+            <div class="t-lbl">Orders in Queue</div>
+        </div>
+        <div class="t-card">
+            <i class="fas fa-fire t-icon"></i>
+            <div class="t-val" style="color:#ef4444;"><?= $kitchen_load ?>%</div>
+            <div class="t-lbl">Kitchen Capacity</div>
+        </div>
+        <div class="t-card">
+            <i class="fas fa-clock t-icon"></i>
+            <div class="t-val"><?= $wait_time ?>m</div>
+            <div class="t-lbl">Est. Prep Time</div>
+        </div>
+    </div>
+    
+    <div class="wallet-card">
+        <div style="font-size:0.75rem; font-weight:600; letter-spacing:1px; opacity:0.8; margin-bottom:8px; text-transform:uppercase;">
+            Campus Wallet
+        </div>
+        <div style="font-size:2.2rem; font-weight:700; line-height:1; margin-bottom:15px;">
+            ₱<?= number_format($campus_cash, 2) ?>
+        </div>
+        <div style="display:flex; justify-content:space-between; font-size:0.85rem; font-weight:500; border-top:1px solid rgba(255,255,255,0.1); padding-top:15px;">
+            <span><i class="fas fa-star" style="color:var(--food-accent);"></i> <?= $loyalty_pts ?> Points</span>
+            <span style="color:var(--food-leaf);"><i class="fas fa-leaf"></i> Eco-Tier Active</span>
+        </div>
+    </div>
 </div>
 
-<div class="order-layout">
-    <div>
-        <div class="cat-nav">
-            <div class="cat-pill active" onclick="filterMenu('All')">All Items</div>
-            <div class="cat-pill" onclick="filterMenu('Mains')">Mains</div>
-            <div class="cat-pill" onclick="filterMenu('Sides')">Sides</div>
-            <div class="cat-pill" onclick="filterMenu('Beverages')">Beverages</div>
-            <div class="cat-pill" onclick="filterMenu('Desserts')">Desserts</div>
-            <button onclick="document.getElementById('addModal').style.display='flex';" class="btn-primary" style="margin-left: auto; padding: 10px 20px;"><i class="fas fa-plus"></i> New Item</button>
+<div class="cafe-grid">
+    <div class="menu-section">
+        <div class="menu-filters">
+            <button class="filter-btn active" onclick="filterMenu('All')">All Items</button>
+            <button class="filter-btn" onclick="filterMenu('Mains')">Mains</button>
+            <button class="filter-btn" onclick="filterMenu('Healthy')">Healthy Choices</button>
+            <button class="filter-btn" onclick="filterMenu('Combos')">Combos</button>
+            <button class="filter-btn" onclick="filterMenu('Beverages')">Beverages</button>
+            <button class="filter-btn" onclick="filterMenu('Trending')">
+                <i class="fas fa-fire" style="color:#ef4444;"></i> Trending
+            </button>
         </div>
-
-        <div class="menu-grid" id="menuGrid">
+        
+        <div class="menu-items">
             <?php
-            $res = mysqli_query($conn, "SELECT * FROM cafeteria_items ORDER BY category ASC, id ASC");
-            while($row = mysqli_fetch_assoc($res)) {
-                $tag_html = $row['tags'] ? "<span class='item-tag'>{$row['tags']}</span>" : "";
-                $price_fmt = number_format($row['price'], 2);
-                echo '
-                <div class="menu-item" data-category="'.$row['category'].'">
-                    <a href="?del='.$row['id'].'" class="item-del-btn" title="Delete Menu Item"><i class="fas fa-trash"></i></a>
-                    <div class="item-icon"><i class="fas '.$row['icon'].'"></i></div>
-                    <div class="item-title">'.$row['name'].'</div>
-                    <div class="item-desc">'.$row['description'].'</div>
-                    <div style="display:flex; align-items:center; gap:10px; margin-bottom:15px;">
-                        <span style="font-size:0.75rem; color:var(--text-light); font-weight:700;"><i class="far fa-clock"></i> '.$row['prep_time'].'m</span>
-                        '.$tag_html.'
+            $res = mysqli_query($conn, "SELECT * FROM cafeteria_menu WHERE is_active=1");
+            while ($m = mysqli_fetch_assoc($res)) {
+                $icon = 'fa-utensils';
+                if (stripos($m['item_name'], 'burger') !== false) $icon = 'fa-hamburger';
+                if (stripos($m['item_name'], 'latte') !== false || stripos($m['item_name'], 'americano') !== false) $icon = 'fa-coffee';
+                if (stripos($m['item_name'], 'vegan') !== false || stripos($m['item_name'], 'keto') !== false) $icon = 'fa-seedling';
+                if (stripos($m['item_name'], 'fries') !== false) $icon = 'fa-french-fries';
+                
+                $jsData = htmlspecialchars(json_encode($m), ENT_QUOTES, 'UTF-8');
+                $dis_class = $m['stock'] == 0 ? 'disabled' : '';
+                
+                echo "
+                <div class='menu-card menu-item-dom {$dis_class}' data-cat='{$m['category']}' data-trend='{$m['is_trending']}'>
+                    <div class='nutri-modal' id='nutri-{$m['id']}'>
+                        <div style='display:flex; justify-content:space-between; margin-bottom:15px;'>
+                            <strong style='font-size:1.1rem;'>Nutrition Facts</strong>
+                            <i class='fas fa-times' style='cursor:pointer;' onclick=\"document.getElementById('nutri-{$m['id']}').style.display='none'\"></i>
+                        </div>
+                        <div style='font-size:0.8rem; margin-bottom:5px; display:flex; justify-content:space-between;'><span>Calories</span><strong>{$m['calories']}</strong></div>
+                        <div style='font-size:0.8rem; margin-bottom:5px; display:flex; justify-content:space-between;'><span>Protein</span><strong>{$m['protein_g']}g</strong></div>
+                        <div style='font-size:0.8rem; margin-bottom:5px; display:flex; justify-content:space-between;'><span>Carbs</span><strong>{$m['carbs_g']}g</strong></div>
+                        <div style='font-size:0.8rem; margin-bottom:5px; display:flex; justify-content:space-between;'><span>Fat</span><strong>{$m['fat_g']}g</strong></div>
+                        <div style='font-size:0.8rem; margin-top:10px; color:#ef4444;'>Allergens: {$m['allergens']}</div>
                     </div>
-                    <div class="item-meta">
-                        <div class="item-price">₱'.$price_fmt.'</div>
-                        <button class="add-btn" onclick="addToCart('.$row['id'].', \''.addslashes($row['name']).'\', '.$row['price'].')" style="width:auto; padding:8px 20px;"><i class="fas fa-plus"></i></button>
+                    
+                    " . ($m['discount_pct'] > 0 ? "<div style='position:absolute; top:10px; right:10px; background:#ef4444; color:#fff; font-size:0.7rem; font-weight:700; padding:4px 8px; border-radius:12px; z-index:2;'>-{$m['discount_pct']}%</div>" : "") . "
+                    
+                    <div class='mc-head'>
+                        <div class='mc-img-ph'><i class='fas {$icon}'></i></div>
+                        <div class='mc-price'>₱" . number_format($m['price'], 2) . "</div>
                     </div>
-                </div>';
+                    
+                    <div class='mc-title'>{$m['item_name']}</div>
+                    
+                    <div class='mc-tags'>
+                        <span class='tag' style='cursor:pointer;' onclick=\"document.getElementById('nutri-{$m['id']}').style.display='flex'\">
+                            <i class='fas fa-info-circle'></i> {$m['calories']} kcal
+                        </span>
+                        " . ($m['dietary_badge'] != 'None' ? "<span class='tag tag-diet'>{$m['dietary_badge']}</span>" : "") . "
+                        " . ($m['spiciness_level'] > 0 ? "<span class='tag tag-alg'>" . str_repeat('🌶️', $m['spiciness_level']) . "</span>" : "") . "
+                        " . ($m['stock'] < 5 && $m['stock'] > 0 ? "<span class='tag' style='color:#ef4444;'>Only {$m['stock']} left</span>" : "") . "
+                    </div>
+                    
+                    <div class='mc-macros'>
+                        <div style='display:flex; align-items:center; flex:1;'>
+                            <span style='width:15px;'>P</span>
+                            <div class='macro-bar'><div class='macro-fill' style='width:" . min(100, $m['protein_g'] * 2) . "%; background:#3b82f6;'></div></div>
+                        </div>
+                        <div style='display:flex; align-items:center; flex:1;'>
+                            <span style='width:15px;'>C</span>
+                            <div class='macro-bar'><div class='macro-fill' style='width:" . min(100, $m['carbs_g'] * 1.5) . "%; background:#f59e0b;'></div></div>
+                        </div>
+                        <div style='display:flex; align-items:center; flex:1;'>
+                            <span style='width:15px;'>F</span>
+                            <div class='macro-bar'><div class='macro-fill' style='width:" . min(100, $m['fat_g'] * 3) . "%; background:#ef4444;'></div></div>
+                        </div>
+                    </div>
+                    
+                    <div class='mc-action'>
+                        <button class='btn-add' onclick='addToCart({$jsData})'>" . ($m['stock'] == 0 ? "Out of Stock" : "Add to Order") . "</button>
+                    </div>
+                </div>";
             }
             ?>
         </div>
     </div>
 
-    <div class="cart-panel">
-        <div class="cart-header">
-            <span><i class="fas fa-shopping-bag" style="color:var(--brand-secondary); margin-right:10px;"></i> Your Order</span>
-            <span id="cartCount" style="background:var(--text-dark); color:var(--main-bg); padding:4px 10px; border-radius:4px; font-size:0.9rem;">0</span>
-        </div>
-        
-        <div class="cart-items" id="cartItems">
-            <div class="empty-cart">
-                <i class="fas fa-tray"></i>
-                <p>Your tray is currently empty.<br>Select items from the menu to begin.</p>
+    <div class="cart-section">
+        <div class="cart-panel">
+            <div class="cart-head">
+                <span>Your Order</span>
+                <span id="cartCount" style="background:var(--brand-secondary); color:#fff; padding:2px 10px; border-radius:12px; font-size:0.85rem;">0</span>
+            </div>
+            
+            <div class="cart-body" id="cartBody">
+                <div style="text-align:center; padding:40px 20px; color:var(--text-light);">
+                    <i class="fas fa-shopping-bag" style="font-size:3rem; margin-bottom:15px; opacity:0.2;"></i>
+                    <div style="font-size:0.9rem; font-weight:500;">Your tray is empty</div>
+                </div>
+            </div>
+            
+            <div class="cart-opts">
+                <div class="opt-row">
+                    <span>Pickup Time</span>
+                    <select class="opt-select" id="pickupTime">
+                        <option value="ASAP">ASAP (<?= $wait_time ?>m)</option>
+                        <option value="12:00 PM">12:00 PM</option>
+                        <option value="01:00 PM">01:00 PM</option>
+                    </select>
+                </div>
+                
+                <div class="opt-row">
+                    <span>Eco-Packaging (+₱15)</span>
+                    <input type="checkbox" class="toggle-switch" id="ecoPack" onchange="updateCartTotals()">
+                </div>
+                
+                <div class="opt-row">
+                    <span>Donate to Pantry</span>
+                    <select class="opt-select" id="donation" onchange="updateCartTotals()">
+                        <option value="0">No</option>
+                        <option value="10">₱10.00</option>
+                        <option value="50">₱50.00</option>
+                    </select>
+                </div>
+                
+                <div class="opt-row">
+                    <span>Promo Code</span>
+                    <input type="text" id="promoCode" class="opt-select" style="width:100px;" placeholder="CODE" onblur="applyPromo()">
+                </div>
+                
+                <input type="text" id="orderNotes" class="opt-select" style="width:100%; margin-top:5px;" placeholder="Add kitchen instructions...">
+            </div>
+            
+            <div class="cart-foot">
+                <div class="cf-row">
+                    <span>Subtotal</span>
+                    <span id="subTotal">₱0.00</span>
+                </div>
+                <div class="cf-row">
+                    <span>Fees & Donations</span>
+                    <span id="feeTotal">₱0.00</span>
+                </div>
+                <div class="cf-row" style="color:#ef4444; display:none;" id="discountRow">
+                    <span>Discount</span>
+                    <span id="discountTotal">-₱0.00</span>
+                </div>
+                <div class="cf-row" style="color:#10b981;">
+                    <span>Est. Calories</span>
+                    <span id="calTotal">0 kcal</span>
+                </div>
+                
+                <div class="cf-total">
+                    <span>Total</span>
+                    <span id="grandTotal">₱0.00</span>
+                </div>
+                
+                <form method="POST" id="checkoutForm">
+                    <input type="hidden" name="place_order" value="1">
+                    <input type="hidden" name="total_amount" id="formTotal">
+                    <input type="hidden" name="order_data" id="formData">
+                    <input type="hidden" name="pickup_time" id="formTime">
+                    <input type="hidden" name="promo_code" id="formPromo">
+                    <input type="hidden" name="donation_amt" id="formDonation">
+                    <input type="hidden" name="kitchen_notes" id="formNotes">
+                    <input type="hidden" name="payment_method" value="Campus Cash">
+                    <input type="hidden" name="loyalty_earned" id="formLoyalty">
+                    
+                    <button type="button" onclick="processCheckout()" class="btn-checkout">
+                        Pay with Campus Cash <i class="fas fa-fingerprint"></i>
+                    </button>
+                </form>
             </div>
         </div>
-
-        <div class="cart-totals">
-            <div class="cart-row"><span>Subtotal</span><span id="cartSub">₱0.00</span></div>
-            <div class="cart-row"><span>Tax (8%)</span><span id="cartTax">₱0.00</span></div>
-            <div class="cart-row total"><span>Total</span><span id="cartTotal">₱0.00</span></div>
-        </div>
-        
-        <button class="checkout-btn" onclick="processCheckout()"><i class="fas fa-credit-card" style="margin-right:10px;"></i> Checkout</button>
     </div>
 </div>
 
-<div id="addModal" class="modal-overlay">
-    <div class="modal-box">
-        <button class="modal-close" type="button" onclick="document.getElementById('addModal').style.display='none';"><i class="fas fa-times"></i></button>
-        <h2 style="font-size: 1.5rem; margin-bottom: 20px; font-family: var(--heading-font); text-transform:uppercase;"><i class="fas fa-utensils" style="color:var(--brand-secondary);"></i> Add Menu Item</h2>
-        <form method="POST" action="cafeteria.php">
-            <input type="hidden" name="add_cafeteria_item" value="1">
-            <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-                <input type="text" name="name" placeholder="Item Name" required>
-                <select name="category" required>
-                    <option value="Mains">Mains</option>
-                    <option value="Sides">Sides & Snacks</option>
-                    <option value="Beverages">Beverages</option>
-                    <option value="Desserts">Desserts</option>
-                </select>
-                <input type="number" step="0.01" name="price" placeholder="Price (₱)" required>
-                <input type="number" name="prep_time" placeholder="Prep Time (mins)" required>
-                <input type="text" name="tags" placeholder="Tags (e.g. Vegan, Spicy)">
-                <input type="text" name="icon" placeholder="FA Icon (e.g. fa-burger)" value="fa-utensils">
-            </div>
-            <textarea name="description" placeholder="Item Description" rows="2" style="margin-top: 15px;" required></textarea>
-            <button type="submit" class="btn-primary" style="width: 100%; margin-top: 15px;"><i class="fas fa-save"></i> Save to Database</button>
-        </form>
+<div class="qr-modal" id="qrModal">
+    <div class="qr-box">
+        <div style="width:60px; height:60px; background:#10b981; border-radius:50%; display:flex; align-items:center; justify-content:center; color:#fff; font-size:1.8rem; margin:0 auto 20px;">
+            <i class="fas fa-check"></i>
+        </div>
+        <h2 style="font-weight:700; font-size:1.5rem; margin-bottom:8px; color:var(--text-dark);">Order Confirmed</h2>
+        <p style="font-size:0.9rem; color:var(--text-light); margin-bottom:25px;">Present this code at the pickup counter.</p>
+        
+        <div id="qrcode" style="background:#fff; padding:15px; border-radius:12px; display:inline-block; margin-bottom:20px; border:1px solid var(--border-color);"></div>
+        
+        <div style="background:var(--bg-grid); padding:12px; border-radius:8px; margin-bottom:25px;">
+            <div style="font-size:0.75rem; font-weight:600; color:var(--text-light); text-transform:uppercase;">Order Hash</div>
+            <div id="hashDisplay" style="font-family:monospace; font-size:1rem; font-weight:700; color:var(--text-dark); word-break:break-all;"></div>
+        </div>
+        
+        <a href="cafeteria.php" style="display:block; background:var(--text-dark); color:var(--food-bg); text-decoration:none; padding:12px; border-radius:10px; font-weight:600;">Close Receipt</a>
     </div>
 </div>
 
 <script>
 let cart = {};
+let promoMultiplier = 1;
+let campusCash = <?= $campus_cash ?>;
 
-function filterMenu(category) {
-    document.querySelectorAll('.cat-pill').forEach(p => p.classList.remove('active'));
+function filterMenu(cat) {
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
     event.target.classList.add('active');
     
-    document.querySelectorAll('.menu-item').forEach(item => {
-        if(category === 'All' || item.getAttribute('data-category') === category || (category === 'Sides' && item.getAttribute('data-category') === 'Sides')) {
-            item.style.display = 'flex';
+    document.querySelectorAll('.menu-item-dom').forEach(el => {
+        if (cat === 'All' || el.getAttribute('data-cat') === cat || (cat === 'Trending' && el.getAttribute('data-trend') === '1')) {
+            el.style.display = 'flex';
         } else {
-            item.style.display = 'none';
+            el.style.display = 'none';
         }
     });
 }
 
-function addToCart(id, name, price) {
-    if(cart[id]) { cart[id].qty++; } 
-    else { cart[id] = { name: name, price: price, qty: 1 }; }
+function addToCart(item) {
+    let finalPrice = item.price - (item.price * (item.discount_pct / 100));
+    if (cart[item.id]) {
+        cart[item.id].qty++;
+    } else {
+        cart[item.id] = { ...item, cart_price: finalPrice, qty: 1 };
+    }
     renderCart();
 }
 
 function updateQty(id, delta) {
-    if(cart[id]) {
+    if (cart[id]) {
         cart[id].qty += delta;
-        if(cart[id].qty <= 0) delete cart[id];
+        if (cart[id].qty <= 0) {
+            delete cart[id];
+        }
         renderCart();
     }
 }
 
-function renderCart() {
-    const container = document.getElementById('cartItems');
-    let html = '';
-    let subtotal = 0;
-    let count = 0;
+function applyPromo() {
+    const code = document.getElementById('promoCode').value.toUpperCase();
+    if (code === 'CAMPUS20') {
+        promoMultiplier = 0.8;
+        systemToast('20% Discount Applied');
+    } else {
+        promoMultiplier = 1;
+    }
+    updateCartTotals();
+}
 
-    for(let id in cart) {
+function renderCart() {
+    const body = document.getElementById('cartBody');
+    let html = '';
+    let count = 0;
+    
+    for (let id in cart) {
         const item = cart[id];
-        const itemTotal = item.price * item.qty;
-        subtotal += itemTotal;
         count += item.qty;
         
         html += `
         <div class="cart-item">
-            <div class="qty-ctrl">
-                <button class="qty-btn" onclick="updateQty(${id}, -1)">-</button>
-                <span style="font-weight:900; width:20px; text-align:center;">${item.qty}</span>
-                <button class="qty-btn" onclick="updateQty(${id}, 1)">+</button>
+            <div>
+                <div class="ci-name">${item.item_name}</div>
+                <div class="ci-price">₱${(item.cart_price * item.qty).toFixed(2)}</div>
             </div>
-            <div class="cart-item-info">
-                <div class="cart-item-title">${item.name}</div>
-                <div class="cart-item-price">₱${itemTotal.toFixed(2)}</div>
+            <div class="ci-ctrl">
+                <button class="ci-btn" onclick="updateQty(${id}, -1)">-</button>
+                <span style="font-size:0.85rem; font-weight:600; width:15px; text-align:center;">${item.qty}</span>
+                <button class="ci-btn" onclick="updateQty(${id}, 1)">+</button>
             </div>
         </div>`;
     }
-
-    if(count === 0) {
-        html = `<div class="empty-cart"><i class="fas fa-tray"></i><p>Your tray is currently empty.<br>Select items from the menu to begin.</p></div>`;
+    
+    if (count === 0) {
+        html = `
+        <div style="text-align:center; padding:40px 20px; color:var(--text-light);">
+            <i class="fas fa-shopping-bag" style="font-size:3rem; margin-bottom:15px; opacity:0.2;"></i>
+            <div style="font-size:0.9rem; font-weight:500;">Your tray is empty</div>
+        </div>`;
     }
-
-    container.innerHTML = html;
+    
+    body.innerHTML = html;
     document.getElementById('cartCount').innerText = count;
+    updateCartTotals();
+}
+
+function updateCartTotals() {
+    let sub = 0;
+    let cals = 0;
     
-    const tax = subtotal * 0.08;
-    const total = subtotal + tax;
+    for (let id in cart) {
+        sub += (cart[id].cart_price * cart[id].qty);
+        cals += (cart[id].calories * cart[id].qty);
+    }
     
-    document.getElementById('cartSub').innerText = `₱${subtotal.toFixed(2)}`;
-    document.getElementById('cartTax').innerText = `₱${tax.toFixed(2)}`;
-    document.getElementById('cartTotal').innerText = `₱${total.toFixed(2)}`;
+    let fees = 0;
+    if (document.getElementById('ecoPack').checked && sub > 0) {
+        fees += 15;
+    }
+    
+    let don = parseFloat(document.getElementById('donation').value);
+    fees += don;
+    
+    let discountAmt = 0;
+    if (promoMultiplier < 1 && sub > 0) {
+        discountAmt = sub * (1 - promoMultiplier);
+        document.getElementById('discountRow').style.display = 'flex';
+    } else {
+        document.getElementById('discountRow').style.display = 'none';
+    }
+    
+    let grand = (sub - discountAmt) + fees;
+    let pts = Math.floor(grand * 0.05);
+    
+    document.getElementById('subTotal').innerText = '₱' + sub.toFixed(2);
+    document.getElementById('feeTotal').innerText = '₱' + fees.toFixed(2);
+    document.getElementById('discountTotal').innerText = '-₱' + discountAmt.toFixed(2);
+    document.getElementById('calTotal').innerText = cals + ' kcal';
+    document.getElementById('grandTotal').innerText = '₱' + grand.toFixed(2);
+    
+    document.getElementById('formTotal').value = grand.toFixed(2);
+    document.getElementById('formDonation').value = don;
+    document.getElementById('formPromo').value = document.getElementById('promoCode').value;
+    document.getElementById('formLoyalty').value = pts;
+    
+    let orderData = { 
+        items: cart, 
+        eco: document.getElementById('ecoPack').checked, 
+        cals: cals 
+    };
+    document.getElementById('formData').value = JSON.stringify(orderData);
 }
 
 function processCheckout() {
-    if(Object.keys(cart).length === 0) { alert("Please add items to your order first."); return; }
-    alert("Order processed successfully! Firing off to the kitchen.");
-    cart = {};
-    renderCart();
+    if (Object.keys(cart).length === 0) {
+        if (typeof systemToast === 'function') systemToast("Tray is empty.");
+        return;
+    }
+    
+    let total = parseFloat(document.getElementById('formTotal').value);
+    if (total > campusCash) {
+        if (typeof systemToast === 'function') systemToast("Insufficient Campus Cash balance.");
+        return;
+    }
+    
+    document.getElementById('formTime').value = document.getElementById('pickupTime').value;
+    document.getElementById('formNotes').value = document.getElementById('orderNotes').value;
+    document.getElementById('checkoutForm').submit();
 }
+
+<?php if(isset($_GET['success']) && isset($_GET['receipt'])): ?>
+document.addEventListener('DOMContentLoaded', () => {
+    const hash = '<?= htmlspecialchars($_GET['receipt']) ?>';
+    document.getElementById('hashDisplay').innerText = hash;
+    document.getElementById('qrModal').style.display = 'flex';
+    
+    new QRCode(document.getElementById("qrcode"), {
+        text: "CAMPUS_ORDER:" + hash,
+        width: 160,
+        height: 160,
+        colorDark : "#0f172a",
+        colorLight : "#ffffff",
+        correctLevel : QRCode.CorrectLevel.H
+    });
+});
+<?php endif; ?>
 </script>
 
 <?php include 'footer.php'; ?>

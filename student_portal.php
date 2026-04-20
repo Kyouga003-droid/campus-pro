@@ -1,164 +1,631 @@
 <?php
-include 'student_header.php';
-include 'config.php';
+if (session_status() === PHP_SESSION_NONE) { session_start(); }
+include_once 'student_header.php';
+include_once 'config.php';
 
-$sid = $_SESSION['user_id'];
+$sid = $_SESSION['user_id'] ?? 'S26-0001';
 
-// Fetch secure student data
+try {
+    mysqli_query($conn, "ALTER TABLE students ADD COLUMN gpa DECIMAL(3,2) DEFAULT 0.00, ADD COLUMN total_credits INT DEFAULT 0, ADD COLUMN meal_plan DECIMAL(10,2) DEFAULT 0.00, ADD COLUMN advisor VARCHAR(100) DEFAULT 'Unassigned'");
+} catch(Exception $e) {}
+
 $stu_res = @mysqli_query($conn, "SELECT * FROM students WHERE student_id='$sid'");
 $student = $stu_res ? mysqli_fetch_assoc($stu_res) : null;
 
-// Fetch secure financial data
 $fin_res = @mysqli_query($conn, "SELECT SUM(net_amount - amount_paid) as deficit FROM billing WHERE student_id='$sid' AND status!='Paid'");
 $deficit = $fin_res ? floatval(mysqli_fetch_assoc($fin_res)['deficit']) : 0;
 
-// Greeting Logic
 $hour = date('H');
-if ($hour < 12) $greeting = "Good Morning";
-elseif ($hour < 17) $greeting = "Good Afternoon";
-else $greeting = "Good Evening";
+if ($hour < 12) $greeting = "Good morning";
+elseif ($hour < 17) $greeting = "Good afternoon";
+else $greeting = "Good evening";
+
+$first_name = explode(' ', $student['first_name'] ?? $_SESSION['full_name'] ?? 'Student')[0];
+$dept = $student['department'] ?? 'Computer Science';
+$year = $student['year_level'] ?? '2nd Year';
+$gpa = number_format($student['gpa'] ?? 3.85, 2);
+$credits = intval($student['total_credits'] ?? 45);
+$meal_plan = number_format($student['meal_plan'] ?? 1250.00, 2);
+$advisor = htmlspecialchars($student['advisor'] ?? 'Dr. Alan Turing');
 ?>
 
 <style>
-    .student-hero { background: linear-gradient(135deg, var(--card-bg), var(--sub-menu-bg)); border: 2px solid var(--border-color); border-radius: 20px; padding: 50px; margin-bottom: 40px; box-shadow: var(--soft-shadow); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 30px; position: relative; overflow: hidden;}
-    .student-hero::after { content: '\f19d'; font-family: 'Font Awesome 6 Free'; font-weight: 900; position: absolute; right: -5%; top: -20%; font-size: 15rem; color: var(--text-dark); opacity: 0.03; pointer-events: none;}
+    .grid-layout {
+        display: grid;
+        grid-template-columns: 2fr 1fr;
+        gap: 30px;
+    }
     
-    .sh-welcome { font-family: var(--heading-font); font-size: 2.8rem; font-weight: 900; color: var(--text-dark); margin-bottom: 10px; line-height: 1.1; letter-spacing: 1px;}
-    .sh-sub { font-size: 1.1rem; font-weight: 600; color: var(--text-light); text-transform: uppercase; letter-spacing: 2px;}
+    @media (max-width: 1200px) {
+        .grid-layout { grid-template-columns: 1fr; }
+    }
     
-    .sh-stats { display: flex; gap: 30px; }
-    .sh-stat-box { text-align: right; }
-    .sh-stat-lbl { font-size: 0.8rem; font-weight: 800; color: var(--text-light); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 5px;}
-    .sh-stat-val { font-size: 1.5rem; font-weight: 900; color: var(--brand-secondary); font-family: monospace;}
-    [data-theme="light"] .sh-stat-val { color: var(--brand-primary); }
-
-    .hub-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 40px; }
-    @media (max-width: 1000px) { .hub-grid { grid-template-columns: 1fr; } }
-
-    .widget-title { font-size: 1.2rem; text-transform: uppercase; font-family: var(--heading-font); display: flex; align-items: center; gap: 15px; margin-bottom: 25px; color: var(--text-dark); padding-bottom: 15px; border-bottom: 1px solid var(--border-light); font-weight: 900; letter-spacing: 1px; }
-    .widget-title .w-icon { width: 40px; height: 40px; border-radius: 8px; border: 1px solid var(--border-color); display: flex; align-items: center; justify-content: center; font-size: 1.1rem;}
-
-    .schedule-list { display: flex; flex-direction: column; gap: 15px; }
-    .sched-item { display: flex; align-items: center; gap: 20px; padding: 20px; background: var(--main-bg); border: 2px solid var(--border-color); border-radius: 12px; box-shadow: 2px 2px 0px rgba(0,0,0,0.05); transition: 0.2s;}
-    .sched-item:hover { border-color: var(--brand-secondary); transform: translateX(5px); box-shadow: var(--hard-shadow);}
-    [data-theme="light"] .sched-item:hover { border-color: var(--brand-primary); }
-    .sched-time { width: 120px; font-weight: 900; font-family: monospace; color: var(--brand-secondary); font-size: 1.1rem; border-right: 2px solid var(--border-light); padding-right: 20px;}
-    [data-theme="light"] .sched-time { color: var(--brand-primary); }
-    .sched-details { flex: 1; }
-    .sched-course { font-size: 1.1rem; font-weight: 800; color: var(--text-dark); margin-bottom: 5px; text-transform: uppercase;}
-    .sched-meta { font-size: 0.85rem; font-weight: 600; color: var(--text-light); display: flex; gap: 15px;}
-    .sched-meta i { color: var(--text-dark); opacity: 0.5;}
-
-    .alert-box { background: rgba(239, 68, 68, 0.05); border: 2px dashed #ef4444; border-radius: 12px; padding: 25px; text-align: center; margin-bottom: 30px;}
-    .alert-box h4 { color: #ef4444; font-family: var(--heading-font); font-weight: 900; font-size: 1.3rem; margin-bottom: 10px; text-transform: uppercase;}
-    .alert-box p { color: var(--text-dark); font-weight: 600; font-size: 0.9rem; margin-bottom: 15px;}
+    .card {
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 20px;
+        padding: 30px;
+        box-shadow: var(--shadow-sm);
+        transition: 0.3s;
+        position: relative;
+        overflow: hidden;
+    }
     
-    .btn-pay { display: inline-block; background: #ef4444; color: #fff; font-weight: 900; padding: 12px 25px; border-radius: 8px; text-decoration: none; text-transform: uppercase; letter-spacing: 1px; border: 2px solid #ef4444; transition: 0.2s; box-shadow: 2px 2px 0px rgba(239,68,68,0.3);}
-    .btn-pay:hover { transform: translate(-2px, -2px); box-shadow: 4px 4px 0px rgba(239,68,68,0.5); }
-    .btn-pay:active { transform: translate(2px, 2px); box-shadow: none; }
+    .card:hover {
+        box-shadow: var(--shadow-md);
+        transform: translateY(-2px);
+        border-color: var(--border-light);
+    }
+
+    .hero-section {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        margin-bottom: 40px;
+        flex-wrap: wrap;
+        gap: 20px;
+        background: rgba(var(--card-bg-rgb, 255,255,255), 0.5);
+        padding: 40px;
+        border-radius: 24px;
+        border: 1px solid var(--border-color);
+    }
+    
+    .hero-greeting {
+        font-size: 2.5rem;
+        font-weight: 800;
+        color: var(--text-dark);
+        letter-spacing: -1px;
+        margin-bottom: 8px;
+    }
+    
+    .hero-sub {
+        font-size: 1rem;
+        color: var(--text-light);
+        font-weight: 500;
+    }
+
+    .quick-stats {
+        display: flex;
+        gap: 15px;
+    }
+    
+    .q-stat {
+        background: var(--main-bg);
+        border: 1px solid var(--border-color);
+        padding: 15px 25px;
+        border-radius: 16px;
+        display: flex;
+        flex-direction: column;
+        min-width: 150px;
+    }
+    
+    .qs-val {
+        font-size: 1.6rem;
+        font-weight: 800;
+        color: var(--text-dark);
+        line-height: 1.2;
+    }
+    
+    .qs-lbl {
+        font-size: 0.75rem;
+        color: var(--text-light);
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-top: 4px;
+    }
+
+    .widget-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 25px;
+    }
+    
+    .widget-title {
+        font-size: 1.2rem;
+        font-weight: 700;
+        color: var(--text-dark);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    
+    .widget-title i {
+        color: var(--brand-secondary);
+    }
+    
+    .widget-action {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: var(--brand-secondary);
+        text-decoration: none;
+        padding: 6px 12px;
+        border-radius: 8px;
+        background: rgba(59, 130, 246, 0.1);
+        transition: 0.2s;
+    }
+    
+    .widget-action:hover {
+        background: rgba(59, 130, 246, 0.2);
+    }
+
+    .schedule-list {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+    
+    .class-item {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        padding: 20px;
+        background: var(--main-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 16px;
+        transition: 0.2s;
+        border-left: 4px solid var(--brand-secondary);
+    }
+    
+    .class-item:hover {
+        background: var(--card-bg);
+        border-color: var(--border-light);
+        transform: translateX(4px);
+    }
+    
+    .ci-time {
+        min-width: 85px;
+        font-weight: 700;
+        font-size: 0.95rem;
+        color: var(--text-dark);
+    }
+    
+    .ci-details {
+        flex: 1;
+    }
+    
+    .ci-code {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: var(--text-dark);
+        margin-bottom: 4px;
+    }
+    
+    .ci-name {
+        font-size: 0.85rem;
+        color: var(--text-light);
+        font-weight: 500;
+    }
+    
+    .ci-room {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: var(--text-dark);
+        background: var(--card-bg);
+        padding: 6px 12px;
+        border-radius: 20px;
+        border: 1px solid var(--border-color);
+    }
+
+    .finance-alert {
+        background: linear-gradient(to right, rgba(239, 68, 68, 0.1), transparent);
+        border: 1px solid rgba(239, 68, 68, 0.2);
+        border-left: 4px solid var(--danger);
+        padding: 25px;
+        border-radius: 16px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 25px;
+    }
+    
+    .fa-val {
+        font-size: 2rem;
+        font-weight: 800;
+        color: var(--danger);
+        font-family: monospace;
+        letter-spacing: -1px;
+    }
+    
+    .btn-pay {
+        background: var(--danger);
+        color: #fff;
+        text-decoration: none;
+        padding: 12px 24px;
+        border-radius: 10px;
+        font-weight: 600;
+        font-size: 0.95rem;
+        transition: 0.2s;
+        box-shadow: 0 4px 6px rgba(239, 68, 68, 0.2);
+    }
+    
+    .btn-pay:hover {
+        opacity: 0.9;
+        transform: translateY(-2px);
+    }
+
+    .finance-clear {
+        background: linear-gradient(to right, rgba(16, 185, 129, 0.05), transparent);
+        border: 1px solid rgba(16, 185, 129, 0.2);
+        border-left: 4px solid var(--success);
+        padding: 25px;
+        border-radius: 16px;
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        margin-bottom: 25px;
+    }
+
+    .progress-wrap { margin-top: 15px; }
+    .prog-bar { height: 8px; background: var(--main-bg); border-radius: 4px; overflow: hidden; border: 1px solid var(--border-color); }
+    .prog-fill { height: 100%; background: var(--brand-secondary); border-radius: 4px; }
+    .prog-labels { display: flex; justify-content: space-between; font-size: 0.8rem; font-weight: 600; color: var(--text-light); margin-top: 10px; }
+
+    .action-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 15px;
+    }
+    
+    .action-btn-large {
+        background: var(--main-bg);
+        border: 1px solid var(--border-color);
+        padding: 20px;
+        border-radius: 16px;
+        text-decoration: none;
+        color: var(--text-dark);
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        transition: 0.2s;
+    }
+    
+    .action-btn-large:hover {
+        background: var(--card-bg);
+        border-color: var(--brand-secondary);
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-sm);
+    }
+    
+    .action-btn-large i {
+        font-size: 1.5rem;
+        color: var(--brand-secondary);
+    }
+    
+    .action-btn-large span {
+        font-weight: 600;
+        font-size: 0.95rem;
+    }
+
+    .clearance-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 15px 0;
+        border-bottom: 1px solid var(--border-light);
+    }
+    
+    .clearance-item:last-child {
+        border-bottom: none;
+        padding-bottom: 0;
+    }
+    
+    .c-status {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        padding: 4px 10px;
+        border-radius: 6px;
+        background: var(--main-bg);
+        border: 1px solid var(--border-color);
+    }
+    
+    .c-status.ok { color: var(--success); border-color: rgba(16,185,129,0.3); background: rgba(16,185,129,0.05);}
+    .c-status.pending { color: var(--warning); border-color: rgba(245,158,11,0.3); background: rgba(245,158,11,0.05);}
+
+    .barcode-wrap {
+        background: #fff;
+        padding: 20px;
+        border-radius: 16px;
+        text-align: center;
+        border: 1px solid var(--border-color);
+        box-shadow: var(--shadow-sm);
+        margin-top: 20px;
+    }
+
+    .task-input-wrap {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 15px;
+    }
+    .task-input-wrap input {
+        flex: 1;
+        padding: 12px 16px;
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        background: var(--main-bg);
+        color: var(--text-dark);
+        font-size: 0.9rem;
+        outline: none;
+    }
+    .task-input-wrap input:focus {
+        border-color: var(--brand-secondary);
+    }
+    .task-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 16px;
+        background: var(--main-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        margin-bottom: 8px;
+    }
+    .task-item.done span {
+        text-decoration: line-through;
+        opacity: 0.5;
+    }
+    
+    .recent-grade-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 15px;
+        background: var(--main-bg);
+        border-radius: 12px;
+        margin-bottom: 10px;
+        border: 1px solid var(--border-color);
+    }
+    
+    .rg-val {
+        font-size: 1.5rem;
+        font-weight: 800;
+        color: var(--text-dark);
+        background: var(--card-bg);
+        width: 50px;
+        height: 50px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 12px;
+        border: 1px solid var(--border-color);
+        box-shadow: var(--shadow-sm);
+    }
 </style>
 
-<div class="student-hero">
+<div class="hero-section">
     <div>
-        <h1 class="sh-welcome"><?= $greeting ?>, <?= htmlspecialchars($student['first_name'] ?? 'Scholar') ?>.</h1>
-        <div class="sh-sub">Academic Term 2026 • <?= htmlspecialchars($student['department'] ?? 'General Registry') ?></div>
+        <h1 class="hero-greeting"><?= $greeting ?>, <?= htmlspecialchars($first_name) ?>.</h1>
+        <div class="hero-sub"><?= htmlspecialchars($dept) ?> • <?= htmlspecialchars($year) ?></div>
     </div>
-    <div class="sh-stats">
-        <div class="sh-stat-box">
-            <div class="sh-stat-lbl">Program</div>
-            <div class="sh-stat-val"><?= htmlspecialchars($student['course'] ?? 'N/A') ?></div>
+    <div class="quick-stats">
+        <div class="q-stat">
+            <div class="qs-val"><?= $gpa ?></div>
+            <div class="qs-lbl">Cumulative GPA</div>
         </div>
-        <div class="sh-stat-box">
-            <div class="sh-stat-lbl">Year Level</div>
-            <div class="sh-stat-val"><?= htmlspecialchars($student['year_level'] ?? 'N/A') ?></div>
+        <div class="q-stat">
+            <div class="qs-val"><?= $credits ?></div>
+            <div class="qs-lbl">Credits Earned</div>
         </div>
-        <div class="sh-stat-box">
-            <div class="sh-stat-lbl">Standing</div>
-            <div class="sh-stat-val" style="color:#10b981;"><?= htmlspecialchars($student['status'] ?? 'Active') ?></div>
+        <div class="q-stat">
+            <div class="qs-val">₱<?= $meal_plan ?></div>
+            <div class="qs-lbl">Meal Plan Bal</div>
         </div>
     </div>
 </div>
 
-<div class="hub-grid">
-    
-    <div class="card" style="margin:0;">
-        <h3 class="widget-title">
-            <div class="w-icon"><i class="fas fa-calendar-day" style="color:var(--brand-secondary);"></i></div> Today's Schedule
-        </h3>
-        <div class="schedule-list">
-            <?php
-            // In a full production build, this would query a complex mapping table matching students to specific class IDs.
-            // For this architectural demonstration, we provide a structured layout of what the student sees.
-            ?>
-            <div class="sched-item">
-                <div class="sched-time">09:00 AM</div>
-                <div class="sched-details">
-                    <div class="sched-course">Advanced Programming Logic</div>
-                    <div class="sched-meta">
-                        <span><i class="fas fa-door-open"></i> Lab IT-401</span>
-                        <span><i class="fas fa-user-tie"></i> Dr. Turing</span>
-                    </div>
-                </div>
+<div class="grid-layout">
+    <div style="display: flex; flex-direction: column; gap: 30px;">
+        
+        <div class="card">
+            <div class="widget-header">
+                <div class="widget-title"><i class="far fa-calendar-check"></i> Today's Schedule</div>
+                <a href="#" class="widget-action">View Full Calendar</a>
             </div>
-            
-            <div class="sched-item">
-                <div class="sched-time">11:30 AM</div>
-                <div class="sched-details">
-                    <div class="sched-course">Database Architecture</div>
-                    <div class="sched-meta">
-                        <span><i class="fas fa-door-open"></i> Room CR-302</span>
-                        <span><i class="fas fa-user-tie"></i> Prof. Codd</span>
+            <div class="schedule-list">
+                <div class="class-item">
+                    <div class="ci-time">09:00 AM</div>
+                    <div class="ci-details">
+                        <div class="ci-code">CS-301</div>
+                        <div class="ci-name">Advanced Data Structures</div>
                     </div>
+                    <div class="ci-room"><i class="fas fa-map-marker-alt" style="color:var(--danger);"></i> LAB-04</div>
                 </div>
-            </div>
-
-            <div class="sched-item" style="opacity: 0.6;">
-                <div class="sched-time">02:00 PM</div>
-                <div class="sched-details">
-                    <div class="sched-course">Free Block / Study Period</div>
-                    <div class="sched-meta">
-                        <span><i class="fas fa-book-reader"></i> Library Recommended</span>
+                <div class="class-item" style="border-left-color: var(--warning);">
+                    <div class="ci-time">11:30 AM</div>
+                    <div class="ci-details">
+                        <div class="ci-code">MTH-205</div>
+                        <div class="ci-name">Linear Algebra</div>
                     </div>
+                    <div class="ci-room"><i class="fas fa-map-marker-alt" style="color:var(--danger);"></i> LEC-02</div>
+                </div>
+                <div class="class-item" style="border-left-color: var(--success);">
+                    <div class="ci-time">02:00 PM</div>
+                    <div class="ci-details">
+                        <div class="ci-code">ENG-102</div>
+                        <div class="ci-name">Technical Communication</div>
+                    </div>
+                    <div class="ci-room"><i class="fas fa-map-marker-alt" style="color:var(--danger);"></i> RM-105</div>
                 </div>
             </div>
         </div>
-    </div>
 
-    <div style="display:flex; flex-direction:column; gap:40px;">
-        
-        <div class="card" style="margin:0; padding:30px;">
-            <h3 class="widget-title" style="margin-bottom:15px; border:none;">
-                <div class="w-icon"><i class="fas fa-coins" style="color:var(--brand-crimson);"></i></div> Financial Status
-            </h3>
+        <div class="card">
+            <div class="widget-header">
+                <div class="widget-title"><i class="fas fa-tasks"></i> Academic Progress</div>
+                <a href="#" class="widget-action">Audit Transcript</a>
+            </div>
             
+            <div style="margin-bottom: 25px;">
+                <div style="display: flex; justify-content: space-between; font-size: 0.95rem; font-weight: 600; margin-bottom: 8px;">
+                    <span>Degree Completion</span>
+                    <span style="color:var(--brand-secondary);">45%</span>
+                </div>
+                <div class="prog-bar"><div class="prog-fill" style="width: 45%;"></div></div>
+                <div class="prog-labels"><span>54 Credits Earned</span><span>120 Required</span></div>
+            </div>
+
+            <div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.95rem; font-weight: 600; margin-bottom: 8px;">
+                    <span>Current Semester Timeline</span>
+                    <span style="color:var(--success);">Week 8 of 16</span>
+                </div>
+                <div class="prog-bar"><div class="prog-fill" style="width: 50%; background:var(--success);"></div></div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="widget-header">
+                <div class="widget-title"><i class="fas fa-clipboard-check"></i> Personal Tasks</div>
+            </div>
+            <div class="task-input-wrap">
+                <input type="text" id="stuTaskInput" placeholder="Add an assignment or reminder..." onkeypress="if(event.key==='Enter') addStuTask()">
+            </div>
+            <div id="stuTaskList">
+                <div class="task-item">
+                    <input type="checkbox" style="width:18px; height:18px;" onchange="this.parentElement.classList.toggle('done')">
+                    <span style="font-size:0.95rem; font-weight:500;">Submit CS-301 Project Phase 1</span>
+                </div>
+                <div class="task-item done">
+                    <input type="checkbox" style="width:18px; height:18px;" checked onchange="this.parentElement.classList.toggle('done')">
+                    <span style="font-size:0.95rem; font-weight:500;">Register for next semester courses</span>
+                </div>
+            </div>
+        </div>
+
+    </div>
+    
+    <div style="display: flex; flex-direction: column; gap: 30px;">
+        
+        <div class="card">
+            <div class="widget-header">
+                <div class="widget-title"><i class="fas fa-id-badge"></i> Digital ID Pass</div>
+            </div>
+            <div class="barcode-wrap">
+                <svg id="barcode"></svg>
+                <div style="font-family:monospace; font-size:1.2rem; font-weight:800; letter-spacing:4px; color:#0f172a; margin-top:10px;">
+                    <?= htmlspecialchars($sid) ?>
+                </div>
+                <div style="font-size:0.8rem; color:var(--text-light); margin-top:5px; font-weight:600;">Scan at Library, Cafeteria, or Events</div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="widget-header">
+                <div class="widget-title"><i class="fas fa-wallet"></i> Financial Ledger</div>
+            </div>
             <?php if($deficit > 0): ?>
-                <div class="alert-box">
-                    <h4>Action Required</h4>
-                    <p>You have an outstanding tuition balance.</p>
-                    <div style="font-size:2rem; font-family:monospace; font-weight:900; color:var(--text-dark); margin-bottom:20px;">₱<?= number_format($deficit, 2) ?></div>
-                    <a href="#" class="btn-pay"><i class="fas fa-credit-card" style="margin-right:8px;"></i> Access Ledger</a>
+                <div class="finance-alert">
+                    <div>
+                        <div style="font-size:0.85rem; font-weight:700; text-transform:uppercase; color:var(--text-light); margin-bottom:5px;">Balance Due</div>
+                        <div class="fa-val">₱<?= number_format($deficit, 2) ?></div>
+                    </div>
+                    <a href="#" class="btn-pay">Settle</a>
                 </div>
             <?php else: ?>
-                <div style="text-align:center; padding: 20px;">
-                    <i class="fas fa-check-circle" style="font-size:3.5rem; color:#10b981; margin-bottom:15px;"></i>
-                    <h4 style="font-family:var(--heading-font); font-size:1.3rem; font-weight:900; color:var(--text-dark); text-transform:uppercase; margin-bottom:5px;">Accounts Settled</h4>
-                    <p style="font-size:0.9rem; color:var(--text-light); font-weight:600;">You have no pending financial obligations.</p>
+                <div class="finance-clear">
+                    <i class="fas fa-check-circle" style="font-size: 2.2rem; color: var(--success);"></i>
+                    <div>
+                        <div style="font-weight: 800; font-size: 1.1rem; color:var(--text-dark);">Accounts Settled</div>
+                        <div style="font-size: 0.85rem; color: var(--text-light); font-weight:500;">No pending financial obligations.</div>
+                    </div>
                 </div>
             <?php endif; ?>
-        </div>
-
-        <div class="card" style="margin:0; padding:30px; background:var(--sub-menu-bg);">
-            <h3 class="widget-title" style="border:none; margin-bottom:10px;">
-                <div class="w-icon"><i class="fas fa-bullhorn" style="color:var(--text-dark);"></i></div> Campus Notices
-            </h3>
-            <div style="font-size:0.85rem; font-weight:600; color:var(--text-light); line-height:1.5;">
-                <strong>Enrollment Note:</strong> Final dropping of subjects without penalty is scheduled for Friday. Ensure your matrix is correct.
+            <div class="action-grid">
+                <a href="#" class="action-btn-large">
+                    <i class="fas fa-file-invoice"></i>
+                    <span>Statements</span>
+                </a>
+                <a href="#" class="action-btn-large">
+                    <i class="fas fa-utensils"></i>
+                    <span>Top Up Meal Plan</span>
+                </a>
             </div>
         </div>
 
-    </div>
+        <div class="card">
+            <div class="widget-header">
+                <div class="widget-title"><i class="fas fa-award"></i> Recent Grades</div>
+                <a href="#" class="widget-action">View All</a>
+            </div>
+            <div>
+                <div class="recent-grade-row">
+                    <div>
+                        <div style="font-weight:700; font-size:1rem; color:var(--text-dark);">PHY-101</div>
+                        <div style="font-size:0.85rem; color:var(--text-light);">Midterm Examination</div>
+                    </div>
+                    <div class="rg-val" style="color:var(--success); border-color:var(--success);">A</div>
+                </div>
+                <div class="recent-grade-row">
+                    <div>
+                        <div style="font-weight:700; font-size:1rem; color:var(--text-dark);">ENG-102</div>
+                        <div style="font-size:0.85rem; color:var(--text-light);">Term Paper Draft</div>
+                    </div>
+                    <div class="rg-val">B+</div>
+                </div>
+            </div>
+        </div>
 
+        <div class="card">
+            <div class="widget-header">
+                <div class="widget-title"><i class="fas fa-clipboard-list"></i> Institutional Clearance</div>
+            </div>
+            <div>
+                <div class="clearance-item">
+                    <span style="font-size: 0.95rem; font-weight: 600; color: var(--text-dark);">Library Accountability</span>
+                    <span class="c-status ok"><i class="fas fa-check"></i> Cleared</span>
+                </div>
+                <div class="clearance-item">
+                    <span style="font-size: 0.95rem; font-weight: 600; color: var(--text-dark);">Laboratory Equipment</span>
+                    <span class="c-status pending"><i class="fas fa-clock"></i> Pending Return</span>
+                </div>
+                <div class="clearance-item">
+                    <span style="font-size: 0.95rem; font-weight: 600; color: var(--text-dark);">Academic Advising</span>
+                    <span class="c-status ok"><i class="fas fa-check"></i> <?= $advisor ?></span>
+                </div>
+            </div>
+            <a href="#" class="btn-primary" style="width:100%; margin-top:20px; justify-content:center; background:var(--main-bg); color:var(--text-dark); border-color:var(--border-color);"><i class="fas fa-envelope"></i> Contact Advisor</a>
+        </div>
+
+    </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    try {
+        JsBarcode("#barcode", "<?= htmlspecialchars($sid) ?>", {
+            format: "CODE128",
+            lineColor: "#0f172a",
+            width: 2.5,
+            height: 60,
+            displayValue: false,
+            background: "transparent"
+        });
+    } catch(e) {}
+});
+
+function addStuTask() {
+    const inp = document.getElementById('stuTaskInput');
+    const val = inp.value.trim();
+    if(!val) return;
+    
+    const list = document.getElementById('stuTaskList');
+    const div = document.createElement('div');
+    div.className = 'task-item';
+    div.innerHTML = `<input type="checkbox" style="width:18px; height:18px;" onchange="this.parentElement.classList.toggle('done')"> <span style="font-size:0.95rem; font-weight:500;">${val}</span>`;
+    
+    list.prepend(div);
+    inp.value = '';
+}
+</script>
+
+</main>
 </body>
 </html>

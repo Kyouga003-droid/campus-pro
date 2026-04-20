@@ -2,7 +2,6 @@
 session_start();
 include 'config.php';
 
-// Ensure admin table exists
 $patch_admin = "CREATE TABLE IF NOT EXISTS admins (
     id INT AUTO_INCREMENT PRIMARY KEY,
     username VARCHAR(50) UNIQUE,
@@ -10,68 +9,56 @@ $patch_admin = "CREATE TABLE IF NOT EXISTS admins (
 )";
 try { mysqli_query($conn, $patch_admin); } catch (Exception $e) {}
 
-// Ensure demo admin exists
 $check_admin = mysqli_query($conn, "SELECT COUNT(*) as c FROM admins");
 if($check_admin && mysqli_fetch_assoc($check_admin)['c'] == 0) {
     $hashed = password_hash('admin123', PASSWORD_DEFAULT);
     mysqli_query($conn, "INSERT INTO admins (username, password) VALUES ('admin', '$hashed')");
 }
 
-// Ensure demo student exists (for testing)
-$check_demo_student = @mysqli_query($conn, "SELECT id FROM students WHERE student_id='S26-DEMO'");
+$check_demo_student = @mysqli_query($conn, "SELECT id FROM students WHERE student_id='S26-0001'");
 if($check_demo_student && mysqli_num_rows($check_demo_student) == 0) {
-    mysqli_query($conn, "INSERT INTO students (student_id, first_name, last_name, email, course, year_level, department, status) VALUES ('S26-DEMO', 'Demo', 'Student', 'demo.student@campus.edu', 'BSCS', '2A', 'Computer Studies', 'Enrolled')");
+    mysqli_query($conn, "INSERT INTO students (student_id, first_name, last_name, email, course, year_level, department, status) VALUES ('S26-0001', 'Alex', 'Mercer', 'alex.m@campus.edu', 'BSCS', '2A', 'Computer Studies', 'Enrolled')");
 }
 
 if(isset($_SESSION['auth']) && $_SESSION['auth'] === true) {
-    if(isset($_SESSION['role']) && $_SESSION['role'] === 'student') {
+    if ($_SESSION['role'] === 'student') {
         header("Location: student_portal.php");
+        exit();
     } else {
         header("Location: index.php");
+        exit();
     }
-    exit();
 }
 
 $error = '';
 
-if($_SERVER['REQUEST_METHOD'] == 'POST') {
-    $user = mysqli_real_escape_string($conn, trim($_POST['username']));
-    $pass = $_POST['password'];
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $username = $_POST['username'] ?? '';
+    $password = $_POST['password'] ?? '';
+    $portal = $_POST['portal_type'] ?? 'student';
 
-    // 1. Check Admin Matrix
-    $res_admin = mysqli_query($conn, "SELECT password FROM admins WHERE username='$user'");
-    if($res_admin && mysqli_num_rows($res_admin) > 0) {
-        $row = mysqli_fetch_assoc($res_admin);
-        if(password_verify($pass, $row['password']) || $pass === 'admin123') {
+    if ($portal === 'student') {
+        if ($username === 'student001' && $password === 'student123') {
+            $_SESSION['auth'] = true;
+            $_SESSION['role'] = 'student';
+            $_SESSION['user_id'] = 'S26-0001';
+            $_SESSION['full_name'] = 'Alex Mercer';
+            header("Location: student_portal.php");
+            exit();
+        } else {
+            $error = 'Invalid Student ID or Passphrase.';
+        }
+    } 
+    elseif ($portal === 'admin') {
+        if ($username === 'admin' && $password === 'admin123') {
             $_SESSION['auth'] = true;
             $_SESSION['role'] = 'admin';
-            $_SESSION['user_id'] = $user;
-            if(function_exists('logAction')) logAction($conn, $user, 'Admin Matrix Initialized');
+            $_SESSION['user_id'] = 'SYS-01';
+            $_SESSION['full_name'] = 'System Administrator';
             header("Location: index.php");
             exit();
         } else {
-            $error = "Invalid credentials. Unauthorized access logged.";
-        }
-    } else {
-        // 2. Check Student Matrix
-        $res_student = @mysqli_query($conn, "SELECT id, first_name, last_name FROM students WHERE student_id='$user'");
-        if($res_student && mysqli_num_rows($res_student) > 0) {
-            // In a production system, students would have hashed passwords in a linked auth table.
-            // For this architecture, we use a universal default password for demonstration.
-            if($pass === 'student123') {
-                $student_data = mysqli_fetch_assoc($res_student);
-                $_SESSION['auth'] = true;
-                $_SESSION['role'] = 'student';
-                $_SESSION['user_id'] = $user;
-                $_SESSION['full_name'] = $student_data['first_name'] . ' ' . $student_data['last_name'];
-                if(function_exists('logAction')) logAction($conn, $user, 'Student Portal Initialized');
-                header("Location: student_portal.php");
-                exit();
-            } else {
-                $error = "Invalid credentials. Unauthorized access logged.";
-            }
-        } else {
-            $error = "Identity not found in the matrix.";
+            $error = 'Invalid Executive Credentials.';
         }
     }
 }
@@ -81,213 +68,578 @@ if($_SERVER['REQUEST_METHOD'] == 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Campus Pro | Authorization</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Playfair+Display:ital,wght@0,600;0,700;0,800;1,600;1,700&display=swap" rel="stylesheet">
+    <title>Campus Matrix | Authenticate</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    
-    <script>
-        try {
-            let savedTheme = localStorage.getItem('campus_theme') || 'light';
-            document.documentElement.setAttribute('data-theme', savedTheme);
-            let savedCb = localStorage.getItem('campus_cb_mode') || 'none';
-            document.documentElement.setAttribute('data-cb', savedCb);
-        } catch(e) {}
-    </script>
-
     <style>
         :root {
-            --brand-primary: #0E2C46; --brand-secondary: #FC9D01; --brand-accent: #D94F00; --brand-crimson: #AB3620;
-            --heading-font: 'Playfair Display', serif; --body-font: 'Inter', sans-serif;
+            --theme-primary: #4f46e5;
+            --theme-primary-hover: #4338ca;
+            --theme-glow: rgba(79, 70, 229, 0.4);
+            --bg-base: #0f172a;
+            --bg-surface: rgba(30, 41, 59, 0.7);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --border-subtle: rgba(255, 255, 255, 0.1);
+            --error-color: #ef4444;
+            --success-color: #10b981;
         }
 
-        [data-theme="light"] {
-            --main-bg: #f4f7f9; --card-bg: #ffffff; 
-            --border-color: #0f172a; --border-light: #cbd5e1;
-            --text-dark: #0f172a; --text-light: #475569;
-            --hard-shadow: 6px 6px 0px rgba(15, 23, 42, 1);
-            --panel-bg: #091c2d; --panel-text: #ffffff;
-        }
-        
-        [data-theme="dark"] {
-            --main-bg: #0b1120; --card-bg: #1e293b; 
-            --border-color: #FC9D01; --border-light: #334155;
-            --text-dark: #f8fafc; --text-light: #94a3b8;
-            --hard-shadow: 6px 6px 0px rgba(252, 157, 1, 1);
-            --panel-bg: #040914; --panel-text: #f8fafc;
+        body.admin-active {
+            --theme-primary: #10b981;
+            --theme-primary-hover: #059669;
+            --theme-glow: rgba(16, 185, 129, 0.4);
         }
 
-        html[data-cb="protanopia"] { filter: url(#protanopia); }
-        html[data-cb="deuteranopia"] { filter: url(#deuteranopia); }
-        html[data-cb="tritanopia"] { filter: url(#tritanopia); }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+        }
 
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        
-        body { font-family: var(--body-font); background-color: var(--main-bg); color: var(--text-dark); display: flex; min-height: 100vh; overflow: hidden; }
+        ::selection {
+            background: var(--theme-primary);
+            color: #fff;
+        }
 
-        @keyframes pulseGlow { 0%, 100% { filter: drop-shadow(0 0 15px rgba(252,157,1,0.5)); } 50% { filter: drop-shadow(0 0 35px rgba(252,157,1,0.9)); } }
-        @keyframes floatLogo { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-20px); } }
-        @keyframes slideIn { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: translateX(0); } }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        body {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: var(--bg-base);
+            color: var(--text-main);
+            overflow: hidden;
+            position: relative;
+        }
 
-        .split-layout { display: flex; width: 100%; height: 100vh; }
-        
-        .brand-panel { flex: 1.2; background: linear-gradient(135deg, var(--panel-bg), #02050a); position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px; text-align: center; overflow: hidden; border-right: 2px solid var(--border-color); z-index: 10;}
-        .brand-panel::before { content: ''; position: absolute; top:0; left:0; width:100%; height:100%; background-image: radial-gradient(rgba(252, 157, 1, 0.08) 2px, transparent 2px); background-size: 50px 50px; z-index: 0; opacity: 0.5;}
-        
-        .logo-container { position: relative; z-index: 1; animation: floatLogo 6s ease-in-out infinite; }
-        .campus-logo-svg { width: 200px; height: 200px; color: var(--brand-secondary); animation: pulseGlow 4s infinite alternate;}
-        
-        .brand-text { position: relative; z-index: 1; margin-top: 50px; }
-        .brand-title { font-family: var(--heading-font); font-size: 4rem; font-weight: 900; color: var(--panel-text); text-transform: uppercase; letter-spacing: 5px; margin-bottom: 10px; text-shadow: 4px 4px 0px rgba(0,0,0,0.5);}
-        .brand-subtitle { font-size: 1.2rem; font-weight: 800; color: var(--brand-secondary); letter-spacing: 4px; text-transform: uppercase; }
-        .brand-motto { margin-top: 30px; font-family: var(--heading-font); font-style: italic; font-size: 1rem; color: rgba(255,255,255,0.4); letter-spacing: 2px; }
+        .ambient-mesh {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            z-index: 0;
+            pointer-events: none;
+            background: 
+                radial-gradient(circle at 15% 50%, var(--theme-glow), transparent 50%),
+                radial-gradient(circle at 85% 30%, rgba(56, 189, 248, 0.15), transparent 50%);
+            transition: background 1s cubic-bezier(0.4, 0, 0.2, 1);
+        }
 
-        .auth-panel { flex: 1; display: flex; align-items: center; justify-content: center; padding: 40px; position: relative; background-image: radial-gradient(rgba(15, 23, 42, 0.04) 2px, transparent 2px); background-size: 30px 30px; animation: fadeIn 0.8s ease-out;}
-        [data-theme="dark"] .auth-panel { background-image: radial-gradient(rgba(252, 157, 1, 0.04) 2px, transparent 2px); }
-        
-        .auth-card { background: var(--card-bg); width: 100%; max-width: 500px; padding: 60px; border-radius: 20px; border: 3px solid var(--border-color); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25), var(--hard-shadow); animation: slideIn 0.6s cubic-bezier(0.16, 1, 0.3, 1); position: relative;}
-        
-        .auth-header { margin-bottom: 45px; text-align: left; }
-        .auth-header h2 { font-family: var(--heading-font); font-size: 2.5rem; font-weight: 900; color: var(--text-dark); margin-bottom: 12px; letter-spacing: 1px;}
-        .auth-header p { font-size: 1.05rem; color: var(--text-light); font-weight: 700; }
+        .ambient-mesh::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.05'/%3E%3C/svg%3E");
+            opacity: 0.4;
+        }
 
-        .input-group { margin-bottom: 30px; position: relative; }
-        .input-group label { display: block; font-size: 0.85rem; font-weight: 900; color: var(--text-dark); text-transform: uppercase; letter-spacing: 2px; margin-bottom: 12px; }
-        .input-wrapper { position: relative; display: flex; align-items: center; }
-        
-        .input-icon { position: absolute; left: 20px; color: var(--text-light); font-size: 1.2rem; transition: 0.3s; pointer-events: none;}
-        
-        .auth-input { width: 100%; padding: 18px 20px 18px 55px; background: var(--main-bg); border: 2px solid var(--border-color); border-radius: 10px; font-family: var(--body-font); font-size: 1.05rem; color: var(--text-dark); font-weight: 800; transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
-        .auth-input:focus { outline: none; background: var(--card-bg); border-color: var(--brand-secondary); box-shadow: 0 10px 25px rgba(0,0,0,0.1), 4px 4px 0px var(--brand-secondary); transform: translate(-4px, -4px); }
-        [data-theme="light"] .auth-input:focus { border-color: var(--brand-primary); box-shadow: 0 10px 25px rgba(0,0,0,0.1), 4px 4px 0px var(--brand-primary); }
-        .auth-input:focus ~ .input-icon { color: var(--brand-secondary); transform: translate(-4px, -4px); }
-        [data-theme="light"] .auth-input:focus ~ .input-icon { color: var(--brand-primary); }
+        .auth-container {
+            position: relative;
+            z-index: 10;
+            width: 100%;
+            max-width: 460px;
+            padding: 48px;
+            background: var(--bg-surface);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid var(--border-subtle);
+            border-radius: 32px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255,255,255,0.05) inset;
+            transform-style: preserve-3d;
+            perspective: 1000px;
+            animation: formEntrance 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
 
-        .toggle-pass { position: absolute; right: 20px; left: auto; cursor: pointer; color: var(--text-light); font-size: 1.2rem; transition: 0.2s; padding: 5px; z-index: 5;}
-        .toggle-pass:hover { color: var(--text-dark); transform: scale(1.1); }
-        .auth-input:focus ~ .toggle-pass { transform: translate(-4px, -4px); }
+        @keyframes formEntrance {
+            from { opacity: 0; transform: translateY(40px) scale(0.95); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
 
-        .btn-login { width: 100%; padding: 20px; background: var(--brand-secondary); color: var(--brand-primary); border: 3px solid var(--border-color); border-radius: 10px; font-family: var(--body-font); font-size: 1.1rem; font-weight: 900; text-transform: uppercase; letter-spacing: 3px; cursor: pointer; transition: 0.2s; box-shadow: var(--hard-shadow); margin-top: 15px; display: flex; justify-content: center; align-items: center; gap: 15px; }
-        [data-theme="light"] .btn-login { background: var(--brand-primary); color: #fff; }
-        .btn-login:hover { transform: translate(-4px, -4px); box-shadow: 8px 8px 0px var(--border-color); }
-        .btn-login:active { transform: translate(4px, 4px); box-shadow: 0 0 0 transparent; }
+        .header-section {
+            text-align: center;
+            margin-bottom: 32px;
+        }
 
-        .error-box { background: rgba(239, 68, 68, 0.1); border: 2px solid #ef4444; color: #ef4444; padding: 18px; border-radius: 10px; font-weight: 900; font-size: 0.85rem; margin-bottom: 30px; display: flex; align-items: center; gap: 12px; text-transform: uppercase; letter-spacing: 1px;}
+        .logo-mark {
+            width: 72px;
+            height: 72px;
+            margin: 0 auto 24px;
+            background: linear-gradient(135deg, var(--theme-primary), var(--theme-primary-hover));
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            color: #fff;
+            box-shadow: 0 10px 25px -5px var(--theme-glow);
+            transition: all 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
 
-        .theme-toggle-fixed { position: absolute; top: 30px; right: 30px; background: var(--card-bg); width: 55px; height: 55px; border-radius: 14px; border: 3px solid var(--border-color); display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--text-dark); font-size: 1.4rem; box-shadow: 3px 3px 0px var(--border-color); transition: 0.2s; z-index: 100;}
-        .theme-toggle-fixed:hover { transform: translate(-3px, -3px); box-shadow: 6px 6px 0px var(--border-color); color: var(--brand-secondary); }
-        [data-theme="light"] .theme-toggle-fixed:hover { color: var(--brand-primary); }
-        .theme-toggle-fixed:active { transform: translate(3px, 3px); box-shadow: none; }
+        body.admin-active .logo-mark {
+            transform: rotateY(180deg) scale(1.05);
+            border-radius: 50%;
+        }
 
-        @media (max-width: 900px) {
-            .split-layout { flex-direction: column; }
-            .brand-panel { flex: 0.4; border-right: none; border-bottom: 3px solid var(--border-color); padding: 30px; }
-            .brand-title { font-size: 2.5rem; }
-            .campus-logo-svg { width: 120px; height: 120px; }
-            .auth-panel { flex: 1; padding: 25px; align-items: flex-start; padding-top: 50px;}
-            .auth-card { padding: 40px; }
+        .icon-inner {
+            transition: 0.6s;
+        }
+
+        body.admin-active .icon-inner {
+            transform: rotateY(-180deg);
+        }
+
+        .title {
+            font-family: 'Outfit', sans-serif;
+            font-size: clamp(1.8rem, 5vw, 2.2rem);
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            margin-bottom: 8px;
+            background: linear-gradient(to right, #fff, #94a3b8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .subtitle {
+            font-size: 0.95rem;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+
+        .segmented-control {
+            display: flex;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 16px;
+            padding: 6px;
+            margin-bottom: 32px;
+            position: relative;
+            border: 1px solid var(--border-subtle);
+        }
+
+        .segment-slider {
+            position: absolute;
+            top: 6px;
+            left: 6px;
+            width: calc(50% - 6px);
+            height: calc(100% - 12px);
+            background: var(--theme-primary);
+            border-radius: 12px;
+            transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), background 0.4s;
+            box-shadow: 0 4px 12px var(--theme-glow);
+            z-index: 1;
+        }
+
+        .segment-btn {
+            flex: 1;
+            padding: 12px 0;
+            text-align: center;
+            font-size: 0.9rem;
+            font-weight: 700;
+            color: var(--text-muted);
+            cursor: pointer;
+            z-index: 2;
+            transition: color 0.3s;
+            user-select: none;
+        }
+
+        .segment-btn.active {
+            color: #fff;
+        }
+
+        .floating-input-group {
+            position: relative;
+            margin-bottom: 24px;
+        }
+
+        .floating-input-group input {
+            width: 100%;
+            background: rgba(0, 0, 0, 0.2);
+            border: 2px solid transparent;
+            color: var(--text-main);
+            padding: 20px 16px 12px;
+            font-size: 1.05rem;
+            border-radius: 16px;
+            outline: none;
+            transition: all 0.3s ease;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .floating-input-group label {
+            position: absolute;
+            left: 16px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 1rem;
+            color: var(--text-muted);
+            pointer-events: none;
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+            font-weight: 500;
+        }
+
+        .floating-input-group input:focus,
+        .floating-input-group input:valid {
+            border-color: var(--theme-primary);
+            background: rgba(0, 0, 0, 0.4);
+            box-shadow: 0 0 0 4px var(--theme-glow), inset 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .floating-input-group input:focus ~ label,
+        .floating-input-group input:valid ~ label {
+            top: 12px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: var(--theme-primary);
+        }
+
+        .password-toggle {
+            position: absolute;
+            right: 16px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 1.1rem;
+            transition: color 0.2s;
+            padding: 8px;
+        }
+
+        .password-toggle:hover {
+            color: var(--text-main);
+        }
+
+        .options-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 32px;
+        }
+
+        .custom-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: var(--text-muted);
+            user-select: none;
+        }
+
+        .custom-checkbox input {
+            display: none;
+        }
+
+        .cb-box {
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--text-muted);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: 0.2s;
+            position: relative;
+        }
+
+        .custom-checkbox input:checked ~ .cb-box {
+            background: var(--theme-primary);
+            border-color: var(--theme-primary);
+        }
+
+        .cb-box::after {
+            content: '\f00c';
+            font-family: 'Font Awesome 6 Free';
+            font-weight: 900;
+            color: #fff;
+            font-size: 0.7rem;
+            opacity: 0;
+            transform: scale(0.5);
+            transition: 0.2s;
+        }
+
+        .custom-checkbox input:checked ~ .cb-box::after {
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        .forgot-link {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.85rem;
+            font-weight: 600;
+            position: relative;
+            transition: 0.3s;
+        }
+
+        .forgot-link::after {
+            content: '';
+            position: absolute;
+            width: 0;
+            height: 2px;
+            bottom: -2px;
+            left: 0;
+            background: var(--theme-primary);
+            transition: width 0.3s ease;
+        }
+
+        .forgot-link:hover {
+            color: var(--text-main);
+        }
+
+        .forgot-link:hover::after {
+            width: 100%;
+        }
+
+        .submit-btn {
+            width: 100%;
+            padding: 18px;
+            border: none;
+            border-radius: 16px;
+            background: linear-gradient(135deg, var(--theme-primary), var(--theme-primary-hover));
+            color: #fff;
+            font-size: 1.1rem;
+            font-weight: 700;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+            transition: transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 10px 20px -5px var(--theme-glow);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+        }
+
+        .submit-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 15px 25px -5px var(--theme-glow);
+        }
+
+        .submit-btn:active {
+            transform: translateY(1px);
+        }
+
+        .ripple {
+            position: absolute;
+            background: rgba(255,255,255,0.3);
+            border-radius: 50%;
+            transform: scale(0);
+            animation: rippleEffect 0.6s linear;
+            pointer-events: none;
+        }
+
+        @keyframes rippleEffect {
+            to { transform: scale(4); opacity: 0; }
+        }
+
+        .error-card {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            padding: 16px;
+            border-radius: 12px;
+            color: #fca5a5;
+            font-size: 0.9rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 24px;
+            animation: errorShake 0.5s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+        }
+
+        @keyframes errorShake {
+            10%, 90% { transform: translate3d(-2px, 0, 0); }
+            20%, 80% { transform: translate3d(4px, 0, 0); }
+            30%, 50%, 70% { transform: translate3d(-6px, 0, 0); }
+            40%, 60% { transform: translate3d(6px, 0, 0); }
+        }
+
+        .spinner {
+            display: none;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .submit-btn.loading .btn-text,
+        .submit-btn.loading .btn-icon {
+            display: none;
+        }
+
+        .submit-btn.loading .spinner {
+            display: block;
+        }
+
+        @media (max-width: 480px) {
+            .auth-container { padding: 32px 24px; border-radius: 24px; }
+            .logo-mark { width: 64px; height: 64px; font-size: 1.5rem; margin-bottom: 20px;}
         }
     </style>
 </head>
 <body>
-    <svg aria-hidden="true" style="width:0; height:0; position:absolute;">
-        <defs>
-            <filter id="protanopia"><feColorMatrix type="matrix" values="0.567 0.433 0 0 0  0.558 0.442 0 0 0  0 0.242 0.758 0 0  0 0 0 1 0"/></filter>
-            <filter id="deuteranopia"><feColorMatrix type="matrix" values="0.625 0.375 0 0 0  0.7 0.3 0 0 0  0 0.3 0.7 0 0  0 0 0 1 0"/></filter>
-            <filter id="tritanopia"><feColorMatrix type="matrix" values="0.95 0.05 0 0 0  0 0.433 0.567 0 0  0 0.475 0.525 0 0  0 0 0 1 0"/></filter>
-        </defs>
-    </svg>
 
-    <button class="theme-toggle-fixed" onclick="toggleLocalTheme()" title="Toggle Matrix Theme">
-        <i id="localThemeIcon" class="fas fa-moon"></i>
-    </button>
+    <div class="ambient-mesh"></div>
 
-    <div class="split-layout">
-        <div class="brand-panel">
-            <div class="logo-container">
-                <svg class="campus-logo-svg" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M60 5 L105 25 L105 75 L60 115 L15 75 L15 25 Z" fill="none" stroke="currentColor" stroke-width="4" stroke-linejoin="round"/>
-                    <path d="M60 15 L95 30 L95 70 L60 100 L25 70 L25 30 Z" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="6 4"/>
-                    <path d="M60 85 L40 70 L40 45 L60 60 Z" fill="currentColor"/>
-                    <path d="M60 85 L80 70 L80 45 L60 60 Z" fill="currentColor"/>
-                    <path d="M60 60 L60 85" stroke="var(--panel-bg)" stroke-width="2"/>
-                    <circle cx="60" cy="35" r="8" fill="currentColor"/>
-                    <circle cx="60" cy="35" r="14" fill="none" stroke="currentColor" stroke-width="2"/>
-                    <path d="M60 21 L60 28 M60 42 L60 49 M46 35 L53 35 M67 35 L74 35" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                </svg>
-            </div>
-            <div class="brand-text">
-                <h1 class="brand-title">Campus Pro</h1>
-                <div class="brand-subtitle">Omni-System Matrix</div>
-                <div class="brand-motto">SCIENTIA IMPERIUM EST</div>
-            </div>
-        </div>
+    <div class="auth-container" id="authCard">
         
-        <div class="auth-panel">
-            <div class="auth-card">
-                <div class="auth-header">
-                    <h2>Authorization</h2>
-                    <p>Verify credentials to access the command matrix.</p>
-                </div>
-
-                <?php if(!empty($error)): ?>
-                    <div class="error-box">
-                        <i class="fas fa-radiation"></i> <?= $error ?>
-                    </div>
-                <?php endif; ?>
-
-                <form method="POST" action="">
-                    <div class="input-group">
-                        <label for="username">Identity Tag</label>
-                        <div class="input-wrapper">
-                            <input type="text" id="username" name="username" class="auth-input" placeholder="Admin/Student ID" required autocomplete="off">
-                            <i class="fas fa-fingerprint input-icon"></i>
-                        </div>
-                    </div>
-                    
-                    <div class="input-group">
-                        <label for="password">Security Cipher</label>
-                        <div class="input-wrapper">
-                            <input type="password" id="password" name="password" class="auth-input" placeholder="••••••••" required>
-                            <i class="fas fa-lock input-icon"></i>
-                            <i class="fas fa-eye toggle-pass" id="togglePass" onclick="togglePassword()"></i>
-                        </div>
-                    </div>
-
-                    <button type="submit" class="btn-login">
-                        Initialize <i class="fas fa-arrow-right"></i>
-                    </button>
-                </form>
+        <div class="header-section">
+            <div class="logo-mark">
+                <i class="fas fa-layer-group icon-inner" id="mainIcon"></i>
             </div>
+            <h1 class="title" id="mainTitle">Scholar Portal</h1>
+            <p class="subtitle" id="mainSub">Secure access to your academic matrix.</p>
         </div>
+
+        <div class="segmented-control">
+            <div class="segment-slider" id="segmentSlider"></div>
+            <div class="segment-btn active" id="btnStudent" onclick="togglePortal('student')">Student</div>
+            <div class="segment-btn" id="btnAdmin" onclick="togglePortal('admin')">Executive</div>
+        </div>
+
+        <?php if($error): ?>
+            <div class="error-card">
+                <i class="fas fa-fingerprint"></i>
+                <span><?= htmlspecialchars($error) ?></span>
+            </div>
+        <?php endif; ?>
+
+        <form method="POST" id="loginForm" onsubmit="handleLoading()">
+            <input type="hidden" name="portal_type" id="portalType" value="student">
+            
+            <div class="floating-input-group">
+                <input type="text" name="username" id="inpUser" required autocomplete="off">
+                <label id="lblUser">Network ID</label>
+            </div>
+            
+            <div class="floating-input-group">
+                <input type="password" name="password" id="inpPass" required autocomplete="off">
+                <label>Passphrase</label>
+                <i class="far fa-eye password-toggle" onclick="toggleVisibility(this, 'inpPass')"></i>
+            </div>
+
+            <div class="options-row">
+                <label class="custom-checkbox">
+                    <input type="checkbox" name="remember">
+                    <div class="cb-box"></div>
+                    Keep me connected
+                </label>
+                <a href="#" class="forgot-link">Recover keys?</a>
+            </div>
+
+            <button type="submit" class="submit-btn" id="btnSubmit">
+                <span class="btn-text" id="btnText">Authenticate</span>
+                <i class="fas fa-arrow-right btn-icon" id="btnArrow"></i>
+                <div class="spinner"></div>
+            </button>
+        </form>
+
     </div>
 
     <script>
-        function toggleLocalTheme() {
-            const html = document.documentElement;
-            const target = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-            html.setAttribute('data-theme', target);
-            localStorage.setItem('campus_theme', target);
-            const icon = document.getElementById('localThemeIcon');
-            if(icon) icon.className = target === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
-        }
+        function togglePortal(type) {
+            const body = document.body;
+            const slider = document.getElementById('segmentSlider');
+            const btnS = document.getElementById('btnStudent');
+            const btnA = document.getElementById('btnAdmin');
+            const pInput = document.getElementById('portalType');
+            const icon = document.getElementById('mainIcon');
+            const title = document.getElementById('mainTitle');
+            const sub = document.getElementById('mainSub');
+            const lblUser = document.getElementById('lblUser');
+            const btnText = document.getElementById('btnText');
 
-        function togglePassword() {
-            const passInput = document.getElementById('password');
-            const passIcon = document.getElementById('togglePass');
-            if (passInput.type === 'password') {
-                passInput.type = 'text';
-                passIcon.className = 'fas fa-eye-slash toggle-pass';
+            pInput.value = type;
+
+            if (type === 'admin') {
+                body.classList.add('admin-active');
+                slider.style.transform = 'translateX(100%)';
+                btnS.classList.remove('active');
+                btnA.classList.add('active');
+                
+                setTimeout(() => { icon.className = 'fas fa-shield-halved icon-inner'; }, 300);
+                title.innerText = 'Command Center';
+                sub.innerText = 'Authorized personnel access only.';
+                lblUser.innerText = 'Executive ID';
+                btnText.innerText = 'Initialize Session';
             } else {
-                passInput.type = 'password';
-                passIcon.className = 'fas fa-eye toggle-pass';
+                body.classList.remove('admin-active');
+                slider.style.transform = 'translateX(0)';
+                btnA.classList.remove('active');
+                btnS.classList.add('active');
+                
+                setTimeout(() => { icon.className = 'fas fa-layer-group icon-inner'; }, 300);
+                title.innerText = 'Scholar Portal';
+                sub.innerText = 'Secure access to your academic matrix.';
+                lblUser.innerText = 'Network ID';
+                btnText.innerText = 'Authenticate';
             }
         }
 
+        function toggleVisibility(icon, targetId) {
+            const input = document.getElementById(targetId);
+            if (input.type === 'password') {
+                input.type = 'text';
+                icon.classList.remove('fa-eye');
+                icon.classList.add('fa-eye-slash');
+            } else {
+                input.type = 'password';
+                icon.classList.remove('fa-eye-slash');
+                icon.classList.add('fa-eye');
+            }
+        }
+
+        function handleLoading() {
+            const btn = document.getElementById('btnSubmit');
+            btn.classList.add('loading');
+        }
+
+        document.getElementById('btnSubmit').addEventListener('click', function(e) {
+            let x = e.clientX - e.target.getBoundingClientRect().left;
+            let y = e.clientY - e.target.getBoundingClientRect().top;
+            let ripples = document.createElement('span');
+            ripples.style.left = x + 'px';
+            ripples.style.top = y + 'px';
+            ripples.classList.add('ripple');
+            this.appendChild(ripples);
+            setTimeout(() => { ripples.remove() }, 600);
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            const card = document.getElementById('authCard');
+            const xAxis = (window.innerWidth / 2 - e.pageX) / 50;
+            const yAxis = (window.innerHeight / 2 - e.pageY) / 50;
+            card.style.transform = `rotateY(${xAxis}deg) rotateX(${yAxis}deg)`;
+        });
+
+        document.addEventListener('mouseleave', () => {
+            const card = document.getElementById('authCard');
+            card.style.transform = `rotateY(0deg) rotateX(0deg)`;
+            card.style.transition = `transform 0.5s ease`;
+            setTimeout(() => { card.style.transition = `none`; }, 500);
+        });
+
         document.addEventListener('DOMContentLoaded', () => {
-            const savedTheme = localStorage.getItem('campus_theme') || 'light';
-            const tIcon = document.getElementById('localThemeIcon');
-            if(tIcon) tIcon.className = savedTheme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
+            const currentType = document.getElementById('portalType').value;
+            togglePortal(currentType);
+            
+            const inputs = document.querySelectorAll('input');
+            inputs.forEach(input => {
+                if(input.value) input.classList.add('valid');
+                input.addEventListener('input', () => {
+                    if(input.value) input.classList.add('valid');
+                    else input.classList.remove('valid');
+                });
+            });
         });
     </script>
 </body>
